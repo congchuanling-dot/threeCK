@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-sanguo-dark text-sanguo-paper font-serif antialiased;
+}
+
+/* 卡牌阴影与边框 */
+.card-face {
+  @apply rounded-lg border-2 border-sanguo-gold/40 shadow-lg shadow-black/30;
+}
