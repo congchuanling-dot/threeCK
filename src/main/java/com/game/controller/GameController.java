@@ -7,6 +7,7 @@ import com.game.engine.GameStateMachine;
 import com.game.event.GameEventPublisher;
 import com.game.event.PlayerDamageEvent;
 import com.game.event.PlayerPlayCardEvent;
+import com.game.service.BotService;
 import com.game.service.RoomService;
 import com.game.websocket.GameMessage;
 import com.game.websocket.GameWebSocketHandler;
@@ -28,15 +29,18 @@ public class GameController {
     private final GameEventPublisher eventPublisher;
     private final GameWebSocketHandler webSocketHandler;
     private final com.game.engine.DefaultGameStarter defaultGameStarter;
+    private final BotService botService;
 
     public GameController(RoomService roomService,
                           GameEventPublisher eventPublisher,
                           GameWebSocketHandler webSocketHandler,
-                          com.game.engine.DefaultGameStarter defaultGameStarter) {
+                          com.game.engine.DefaultGameStarter defaultGameStarter,
+                          BotService botService) {
         this.roomService = roomService;
         this.eventPublisher = eventPublisher;
         this.webSocketHandler = webSocketHandler;
         this.defaultGameStarter = defaultGameStarter;
+        this.botService = botService;
     }
 
     /**
@@ -67,15 +71,7 @@ public class GameController {
                 ctx.getCurrentPlayer().ifPresent(cur ->
                         webSocketHandler.sendDrawnCards(roomId, cur.getPlayerId(), drawn));
             }
-            List<Card> currentHand = ctx.getCurrentPlayer()
-                    .map(p -> List.copyOf(p.getHandCards()))
-                    .orElseGet(List::of);
-            return Map.<String, Object>of(
-                    "ok", true,
-                    "roomId", roomId,
-                    "phase", ctx.getCurrentPhase().name(),
-                    "hand", currentHand
-            );
+            return buildGameStateResponse(ctx, roomId);
         });
     }
 
@@ -148,7 +144,7 @@ public class GameController {
             webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
                     Map.of("playerId", playerId, "cardId", cardId, "cardType", type)));
             webSocketHandler.broadcastGameContext(roomId, ctx);
-            return Map.<String, Object>of("ok", true);
+            return buildGameStateResponse(ctx, roomId);
         });
     }
 
@@ -177,9 +173,28 @@ public class GameController {
             webSocketHandler.broadcastGameContext(roomId, ctx);
             ctx.getCurrentPlayer().ifPresent(next ->
                     webSocketHandler.sendDrawnCards(roomId, next.getPlayerId(), drawn));
-            return Map.<String, Object>of("ok", true, "phase", ctx.getCurrentPhase().name(),
-                    "currentSeat", ctx.getCurrentSeatIndex(), "round", ctx.getRoundNumber());
+            // 若轮到机器人，自动执行机器人回合直到再次轮到人类
+            botService.runBotTurnsUntilHuman(roomId, ctx, sm);
+            webSocketHandler.broadcastGameContext(roomId, ctx);
+            return buildGameStateResponse(ctx, roomId);
         });
+    }
+
+    /** 构建统一的游戏状态响应：hand、players、phase、currentSeatIndex、roundNumber */
+    private Map<String, Object> buildGameStateResponse(GameContext ctx, String roomId) {
+        var dto = webSocketHandler.buildContextDTO(ctx);
+        List<Card> hand = ctx.getCurrentPlayer()
+                .map(p -> List.copyOf(p.getHandCards()))
+                .orElseGet(List::of);
+        return Map.of(
+                "ok", true,
+                "roomId", roomId,
+                "hand", hand,
+                "players", dto.getPlayers() != null ? dto.getPlayers() : List.of(),
+                "phase", ctx.getCurrentPhase().name(),
+                "currentSeatIndex", ctx.getCurrentSeatIndex(),
+                "roundNumber", ctx.getRoundNumber()
+        );
     }
 
     /**

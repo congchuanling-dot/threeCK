@@ -49,9 +49,9 @@
         </div>
         <div class="space-y-2">
           <HandArea
-            :cards="game.myHandCards.value"
+            :cards="handCardsList"
             :can-play="canPlayCard"
-            :current-phase="game.currentPhase"
+            :current-phase="phaseStr"
             :selected-id="selectedCardId"
             @play="playCard"
           />
@@ -102,6 +102,11 @@ const inBattle = computed(() => !!game.roomId && game.myHandCards.value.length >
 
 const canPlayCard = computed(() => game.currentPhase.value === 'PLAY')
 
+const handCardsList = computed(() =>
+  Array.isArray(game.myHandCards?.value) ? game.myHandCards.value : []
+)
+const phaseStr = computed(() => game.currentPhase?.value ?? 'PREPARE')
+
 const currentPlayer = computed(() =>
   game.players.value.find((p) => p.seatIndex === game.currentSeatIndex.value)
 )
@@ -140,10 +145,7 @@ async function startGame() {
     const data = await res.json()
     if (data?.ok) {
       game.addLog('系统', '游戏开始')
-      // 优先使用 HTTP 返回的手牌，保证 MVP 可以直接玩
-      if (Array.isArray(data.hand)) {
-        game.myHandCards.value = data.hand
-      }
+      game.applyGameState(data)
     } else if (data?.message) {
       game.addLog('系统', data.message)
     }
@@ -158,16 +160,26 @@ async function playCard(card) {
   const pid = game.myPlayerId.value
   if (!rid || !pid || !card?.id) return
   if (game.currentPhase.value !== 'PLAY') return
+  // 「杀」需要目标：1v1 时自动选另一个存活玩家（机器人）
+  let targetId = null
+  if ((card.rankOrName || card.type) === '杀') {
+    const other = game.players.value.find(
+      (p) => p.playerId !== pid && (p.hp ?? 4) > 0
+    )
+    targetId = other?.playerId ?? null
+  }
   try {
     const res = await fetch(`/api/game/${rid}/play`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: pid, cardId: card.id }),
+      body: JSON.stringify({ playerId: pid, cardId: card.id, targetId }),
     })
     const data = await res.json()
     if (data?.ok) {
-      game.myHandCards.value = game.myHandCards.value.filter((c) => c.id !== card.id)
+      game.applyGameState(data)
       selectedCardId.value = null
+    } else if (data?.message) {
+      game.addLog('系统', data.message)
     }
   } catch (e) {
     console.error('playCard failed', e)
@@ -185,7 +197,9 @@ async function endRound() {
       body: JSON.stringify({ playerId: pid }),
     })
     const data = await res.json()
-    if (!data?.ok && data?.message) {
+    if (data?.ok) {
+      game.applyGameState(data)
+    } else if (data?.message) {
       game.addLog('系统', data.message)
     }
   } catch (e) {

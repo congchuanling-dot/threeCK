@@ -82,9 +82,11 @@ public class GameWebSocketHandler implements WebSocketHandler {
         String nickname = root.has("nickname") ? root.get("nickname").asText() : "房主";
         GameRoom room = roomService.createRoom(roomName, maxPlayers, ownerId);
         room.join(ownerId, nickname);
+        int botSeat = room.join("BOT_1", "机器人");  // 自动加入机器人，方便单人打牌
         roomService.bindPlayerSession(room.getRoomId(), ownerId, sessionId);
         GameMessage msg = GameMessage.roomCreated(room.getRoomId(), room.getRoomName(), room.getMaxPlayers(), ownerId, nickname);
         sendToSession(sessionId, msg);
+        sendToSession(sessionId, GameMessage.playerJoined(room.getRoomId(), "BOT_1", "机器人", botSeat));
     }
 
     private void handleJoin(String sessionId, JsonNode root) {

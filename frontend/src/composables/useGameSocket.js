@@ -129,13 +129,18 @@ export function useGameSocket() {
     send({ action: 'join', roomId: rid, playerId: pid, nickname: nickname || pid })
   }
 
-  /** 同步本地游戏状态（可由 HTTP 拉取或服务端推送的 GameContext 更新） */
-  function updateGameState(state) {
-    if (state.players) players.value = state.players
-    if (state.myHandCards) myHandCards.value = state.myHandCards
-    if (state.currentPhase != null) currentPhase.value = state.currentPhase
-    if (state.currentSeatIndex != null) currentSeatIndex.value = state.currentSeatIndex
-    if (state.roundNumber != null) roundNumber.value = state.roundNumber
+  /** 同步本地游戏状态（HTTP 返回的 hand/players/phase 等） */
+  function applyGameState(data) {
+    if (!data) return
+    if (Array.isArray(data.players)) players.value = data.players
+    if (data.phase != null) currentPhase.value = data.phase
+    if (typeof data.currentSeatIndex === 'number') currentSeatIndex.value = data.currentSeatIndex
+    if (typeof data.roundNumber === 'number') roundNumber.value = data.roundNumber
+    // hand 仅当当前玩家是自己时更新（服务端返回的是当前玩家的手牌）
+    const curPlayer = data.players?.find((p) => p.seatIndex === data.currentSeatIndex)
+    if (curPlayer && curPlayer.playerId === myPlayerId.value && Array.isArray(data.hand)) {
+      myHandCards.value = data.hand
+    }
   }
 
   function disconnect() {
@@ -165,7 +170,7 @@ export function useGameSocket() {
     send,
     createRoom,
     joinRoom,
-    updateGameState,
+    applyGameState,
     addLog,
     disconnect,
   }
