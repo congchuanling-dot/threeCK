@@ -1,6 +1,6 @@
 <template>
-  <div class="flex flex-col rounded-xl border-2 border-sanguo-gold/40 bg-sanguo-dark/80 p-4">
-    <div class="flex-shrink-0 text-sanguo-gold/90 text-sm mb-2">
+  <div class="flex flex-col rounded-xl border-2 border-amber-700/50 bg-amber-950/30 p-4 shadow-inner">
+    <div class="flex-shrink-0 text-amber-200/90 text-sm mb-2 font-medium">
       手牌 ({{ cards.length }}) · 当前阶段：{{ phaseLabel }}
     </div>
     <div class="flex flex-wrap gap-2 justify-center items-end min-h-[100px]">
@@ -10,7 +10,7 @@
         :card="card"
         :can-play="canPlay"
         :selected="selectedId === card.id"
-        @play="$emit('play', $event)"
+        @play="$emit('select', $event)"
       />
     </div>
   </div>
@@ -27,7 +27,7 @@ const props = defineProps({
   selectedId: { type: String, default: null },
 })
 
-defineEmits(['play'])
+defineEmits(['select'])
 
 const phaseLabel = computed(() => {
   const map = {

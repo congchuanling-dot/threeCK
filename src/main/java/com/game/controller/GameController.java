@@ -118,7 +118,7 @@ public class GameController {
                 var target = targetOpt.get();
                 player.removeHandCard(card);
                 eventPublisher.publish(new PlayerDamageEvent(ctx, target, player, 1));
-                target.takeDamage(1);
+                // 扣血由 DefaultPlayerDamageListener 统一处理，避免重复扣血
                 eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card, target));
                 webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("DAMAGE",
                         Map.of("targetId", target.getPlayerId(), "targetName", target.getNickname(),
