@@ -19,6 +19,16 @@ public class GameContextDTO {
     private int drawPileSize;
     private int discardPileSize;
     private List<PlayerSnapshot> players;
+    /** 待响应的杀 { targetId, sourceId, sourceName, targetName, amount } */
+    private java.util.Map<String, Object> pendingKill;
+    /** 中央出牌区展示的最近打出的牌 [{ playerId, cardId, cardType, targetId?, targetName? }] */
+    private List<java.util.Map<String, Object>> battleCards;
+
+    public java.util.Map<String, Object> getPendingKill() { return pendingKill; }
+    public void setPendingKill(java.util.Map<String, Object> pendingKill) { this.pendingKill = pendingKill; }
+
+    public List<java.util.Map<String, Object>> getBattleCards() { return battleCards; }
+    public void setBattleCards(List<java.util.Map<String, Object>> battleCards) { this.battleCards = battleCards; }
 
     public String getRoomId() {
         return roomId;

@@ -26,7 +26,7 @@ function normalizeCard(item) {
   return {
     id: item.cardId || item.id || '?',
     suit: item.suit || 'SPADE',
-    rankOrName: item.rankOrName || item.rank || '?',
+    rankOrName: item.rankOrName || item.rank || item.cardType || '?',
   }
 }
 </script>

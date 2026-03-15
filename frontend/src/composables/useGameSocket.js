@@ -19,6 +19,7 @@ export function useGameSocket() {
   const roundNumber = ref(1)
   const battleCards = ref([]) // 当前出的牌（最近几张）
   const gameLog = ref([])
+  const pendingKill = ref(null) // 待响应的杀 { targetId, sourceId, sourceName, targetName, amount }
   const ws = shallowRef(null)
 
   function connect() {
@@ -66,6 +67,8 @@ export function useGameSocket() {
           if (payload?.currentPhase) currentPhase.value = payload.currentPhase
           if (typeof payload?.currentSeatIndex === 'number') currentSeatIndex.value = payload.currentSeatIndex
           if (typeof payload?.roundNumber === 'number') roundNumber.value = payload.roundNumber
+          pendingKill.value = payload?.pendingKill ?? null
+          if (Array.isArray(payload?.battleCards)) battleCards.value = payload.battleCards
           if (Array.isArray(payload?.players)) {
             players.value = payload.players
             const me = payload.players.find(p => p.playerId === myPlayerId.value)
@@ -84,9 +87,13 @@ export function useGameSocket() {
           if (messageType === 'PLAY_CARD' && data) {
             battleCards.value = [...(battleCards.value.slice(-4)), { ...data }]
             const p = players.value.find(x => x.playerId === data.playerId)
-            addLog(p?.nickname ?? data.playerId, `打出了手牌`)
+            const cardType = data.cardType || '?'
+            addLog(p?.nickname ?? data.playerId, `打出了 ${cardType}`)
           } else if (messageType === 'DAMAGE' && data) {
             addLog(data.sourceName ?? '未知', `对 ${data.targetName ?? data.targetId} 造成 ${data.amount ?? 0} 点伤害`)
+          } else if (messageType === 'SHAN_NEGATED' && data) {
+            const name = players.value.find(x => x.playerId === data.targetId)?.nickname ?? data.targetId
+            addLog(name ?? '对方', data.message || '出闪抵消了杀')
           }
         }
       } catch (e) {
@@ -136,6 +143,8 @@ export function useGameSocket() {
     if (data.phase != null) currentPhase.value = data.phase
     if (typeof data.currentSeatIndex === 'number') currentSeatIndex.value = data.currentSeatIndex
     if (typeof data.roundNumber === 'number') roundNumber.value = data.roundNumber
+    pendingKill.value = data.pendingKill ?? null
+    if (Array.isArray(data.battleCards)) battleCards.value = data.battleCards
     // hand 仅当当前玩家是自己时更新（服务端返回的是当前玩家的手牌）
     const curPlayer = data.players?.find((p) => p.seatIndex === data.currentSeatIndex)
     if (curPlayer && curPlayer.playerId === myPlayerId.value && Array.isArray(data.hand)) {
@@ -173,5 +182,6 @@ export function useGameSocket() {
     applyGameState,
     addLog,
     disconnect,
+    pendingKill,
   }
 }

@@ -32,6 +32,9 @@ public class GameContext {
     private volatile boolean drawnThisTurn = false;
     /** 扩展数据（可选，用于挂载技能、标记等） */
     private final Map<String, Object> attributes = new ConcurrentHashMap<>();
+    /** 最近打出的牌（用于中央出牌区展示），最多保留 8 条 */
+    private static final int BATTLE_CARDS_MAX = 8;
+    private final List<Map<String, Object>> recentBattleCards = new CopyOnWriteArrayList<>();
 
     public GameContext(GameRoom room) {
         this.room = Objects.requireNonNull(room, "room must not be null");
@@ -162,5 +165,46 @@ public class GameContext {
     @SuppressWarnings("unchecked")
     public <T> Optional<T> getAttribute(String key) {
         return Optional.ofNullable((T) attributes.get(key));
+    }
+
+    /** 待响应杀的键名 */
+    public static final String PENDING_KILL = "pendingKill";
+
+    /** 记录待响应的杀：targetId 可选择出闪或承受伤害 */
+    public void setPendingKill(String targetId, String sourceId, String sourceName, String targetName, int amount) {
+        attributes.put(PENDING_KILL, Map.of(
+                "targetId", targetId, "sourceId", sourceId, "sourceName", sourceName != null ? sourceName : sourceId,
+                "targetName", targetName != null ? targetName : targetId, "amount", amount));
+    }
+
+    @SuppressWarnings("unchecked")
+    public Optional<Map<String, Object>> getPendingKill() {
+        return getAttribute(PENDING_KILL);
+    }
+
+    public void clearPendingKill() {
+        attributes.remove(PENDING_KILL);
+    }
+
+    /** 记录打出的牌，供中央出牌区展示 */
+    public void addPlayedCard(String playerId, String cardId, String cardType, String targetId, String targetName) {
+        Map<String, Object> entry = new java.util.HashMap<>();
+        entry.put("playerId", playerId);
+        entry.put("cardId", cardId);
+        entry.put("cardType", cardType);
+        if (targetId != null) entry.put("targetId", targetId);
+        if (targetName != null) entry.put("targetName", targetName);
+        synchronized (recentBattleCards) {
+            recentBattleCards.add(entry);
+            while (recentBattleCards.size() > BATTLE_CARDS_MAX) {
+                recentBattleCards.remove(0);
+            }
+        }
+    }
+
+    public List<Map<String, Object>> getRecentBattleCards() {
+        synchronized (recentBattleCards) {
+            return new ArrayList<>(recentBattleCards);
+        }
     }
 }

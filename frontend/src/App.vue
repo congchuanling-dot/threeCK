@@ -60,7 +60,7 @@
 
           <!-- 中央：出牌区/牌堆 -->
           <div class="flex-1 min-h-[80px] rounded-xl border-2 border-dashed border-amber-700/40 bg-amber-950/20 flex items-center justify-center">
-            <BattleArea :cards="game.battleCards" />
+            <BattleArea :cards="battleCardsList" />
           </div>
 
           <!-- 下方：自己的武将框 + 手牌区 -->
@@ -76,17 +76,27 @@
               />
             </div>
             <div class="flex flex-col gap-2 rounded-xl border-2 border-amber-700/50 bg-amber-950/30 p-4 shadow-inner">
+              <!-- 被杀响应提示 -->
+              <div
+                v-if="isRespondMode"
+                class="mb-2 px-3 py-2 rounded-lg bg-red-900/40 border border-red-500/50 text-red-200 text-sm"
+              >
+                {{ game.pendingKill?.value?.sourceName ?? '对方' }} 对你出杀！请出闪抵消或承受伤害
+              </div>
               <HandArea
                 :cards="handCardsList"
-                :can-play="canPlayCard"
+                :can-play="canPlayCard || isRespondMode"
                 :current-phase="phaseStr"
                 :selected-id="selectedCardId"
                 @select="onSelectCard"
               />
-              <div class="flex justify-between items-center gap-3">
+              <div class="flex justify-between items-center gap-3 flex-wrap">
                 <span v-if="selectedCard" class="text-amber-300 text-sm">
-                  已选: {{ selectedCard.rankOrName || selectedCard.type || '?' }}
-                  <span v-if="needsTarget && !selectedTargetId" class="text-amber-500">→ 请点击目标</span>
+                  {{ isRespondMode ? '已选闪，点击出牌抵消' : `已选: ${selectedCard.rankOrName || selectedCard.type || '?'}` }}
+                  <span v-if="!isRespondMode && needsTarget && !selectedTargetId" class="text-amber-500">→ 请点击目标</span>
+                  <span v-if="!isRespondMode && (selectedCard.rankOrName || selectedCard.type) === '杀' && selectedTargetId" class="text-red-400 font-medium">
+                    → 对 {{ targetPlayerName }} 出杀
+                  </span>
                 </span>
                 <div class="flex gap-2">
                   <button
@@ -94,14 +104,21 @@
                     :disabled="!canConfirmPlay"
                     @click="confirmPlay"
                   >
-                    出牌
+                    {{ playButtonText }}
+                  </button>
+                  <button
+                    v-if="isRespondMode"
+                    class="px-4 py-2 rounded-lg border-2 border-red-500/60 text-red-300 hover:bg-red-500/20 transition-colors text-sm"
+                    @click="acceptDamage"
+                  >
+                    承受伤害
                   </button>
                   <button
                     class="px-4 py-2 rounded-lg border-2 border-amber-500/60 text-amber-300 hover:bg-amber-500/20 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-                    :disabled="!isMyTurn"
+                    :disabled="!isMyTurn || isRespondMode || endRoundLoading"
                     @click="endRound"
                   >
-                    结束回合
+                    {{ endRoundLoading ? '处理中...' : '结束回合' }}
                   </button>
                 </div>
               </div>
@@ -140,9 +157,16 @@ const selectedTargetId = ref(null)
 const inBattle = computed(() => !!game.roomId && game.myHandCards.value.length > 0)
 
 const canPlayCard = computed(() => game.currentPhase.value === 'PLAY')
+const isRespondMode = computed(() => {
+  const pk = game.pendingKill.value
+  return pk && pk.targetId === game.myPlayerId.value
+})
 
 const handCardsList = computed(() =>
   Array.isArray(game.myHandCards?.value) ? game.myHandCards.value : []
+)
+const battleCardsList = computed(() =>
+  Array.isArray(game.battleCards?.value) ? game.battleCards.value : []
 )
 const phaseStr = computed(() => game.currentPhase?.value ?? 'PREPARE')
 
@@ -174,29 +198,54 @@ const selectedCard = computed(() =>
   handCardsList.value.find((c) => c.id === selectedCardId.value) ?? null
 )
 const targetSelectable = computed(
-  () => isMyTurn.value && canPlayCard.value && selectedCard.value && needsTarget.value
+  () => !isRespondMode.value && isMyTurn.value && canPlayCard.value && selectedCard.value && needsTarget.value
 )
 const needsTarget = computed(() => {
   const t = selectedCard.value?.rankOrName || selectedCard.value?.type
-  return t === '杀' || t === '桃'
+  return t === '杀' // 桃只能给自己用，不需要选目标
 })
 const canConfirmPlay = computed(() => {
+  if (isRespondMode.value) {
+    return !!selectedCard.value && (selectedCard.value?.rankOrName || selectedCard.value?.type) === '闪'
+  }
   if (!selectedCard.value || !isMyTurn.value) return false
   const t = selectedCard.value?.rankOrName || selectedCard.value?.type
-  if (t === '杀' || t === '桃') return !!selectedTargetId.value
+  if (t === '闪') return false
+  if (t === '杀') return !!selectedTargetId.value
+  if (t === '桃') {
+    // 桃只能给自己用，且满血时不能使用
+    const me = mePlayer.value
+    return me && (me.hp ?? 4) < (me.maxHp ?? 4)
+  }
   return true
+})
+
+const targetPlayerName = computed(() => {
+  if (!selectedTargetId.value) return ''
+  const p = game.players.value.find((x) => x.playerId === selectedTargetId.value)
+  return p?.nickname ?? p?.playerId ?? ''
+})
+
+const playButtonText = computed(() => {
+  if (isRespondMode.value) return '出闪抵消'
+  const t = selectedCard.value?.rankOrName || selectedCard.value?.type
+  if (t === '杀' && selectedTargetId.value && targetPlayerName.value) return `对 ${targetPlayerName.value} 出杀`
+  return '出牌'
 })
 
 function isTargetValid(p) {
   if (!p || (p.hp ?? 4) <= 0) return false
   const t = selectedCard.value?.rankOrName || selectedCard.value?.type
   if (t === '杀') return p.playerId !== game.myPlayerId.value
-  if (t === '桃') return true
+  if (t === '桃') return p.playerId === game.myPlayerId.value && (p.hp ?? 4) < (p.maxHp ?? 4)
   return false
 }
 
 function onSelectCard(card) {
-  if (!card?.id || !canPlayCard.value) return
+  if (!card?.id) return
+  if (isRespondMode.value) {
+    if ((card.rankOrName || card.type) !== '闪') return
+  } else if (!canPlayCard.value || (card.rankOrName || card.type) === '闪') return
   if (selectedCardId.value === card.id) {
     selectedCardId.value = null
     selectedTargetId.value = null
@@ -252,12 +301,12 @@ async function startGame() {
   }
 }
 
-/** 出牌：点击手牌后发送到后端并本地从手牌移除（最终状态以服务端广播为准） */
+/** 出牌：点击手牌后发送到后端。响应杀时出闪也走 /play 接口。 */
 async function playCard(card) {
   const rid = game.roomId.value
   const pid = game.myPlayerId.value
   if (!rid || !pid || !card?.id) return
-  if (game.currentPhase.value !== 'PLAY') return
+  if (!isRespondMode.value && game.currentPhase.value !== 'PLAY') return
   // 「杀」「桃」使用用户点击选择的目标
   const cardType = card.rankOrName || card.type
   let targetId = null
@@ -284,10 +333,36 @@ async function playCard(card) {
   }
 }
 
+/** 承受伤害：被杀目标选择不出闪，承受伤害 */
+async function acceptDamage() {
+  const rid = game.roomId.value
+  const pid = game.myPlayerId.value
+  if (!rid || !pid || !isRespondMode.value) return
+  try {
+    const res = await fetch(`/api/game/${rid}/respond`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: pid, action: 'PASS' }),
+    })
+    const data = await res.json()
+    if (data?.ok) {
+      game.applyGameState(data)
+      selectedCardId.value = null
+      selectedTargetId.value = null
+    } else if (data?.message) {
+      game.addLog('系统', data.message)
+    }
+  } catch (e) {
+    console.error('acceptDamage failed', e)
+  }
+}
+
+const endRoundLoading = ref(false)
 async function endRound() {
   const rid = game.roomId.value
   const pid = game.myPlayerId.value
   if (!rid || !pid) return
+  endRoundLoading.value = true
   try {
     const res = await fetch(`/api/game/${rid}/endRound`, {
       method: 'POST',
@@ -302,6 +377,8 @@ async function endRound() {
     }
   } catch (e) {
     console.error('endRound failed', e)
+  } finally {
+    endRoundLoading.value = false
   }
 }
 

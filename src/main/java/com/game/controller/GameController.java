@@ -76,7 +76,7 @@ public class GameController {
     }
 
     /**
-     * 出牌：当前阶段为 PLAY 时有效。杀→目标 -1 血；桃→目标 +1 血（上限封顶）；闪→仅弃置。
+     * 出牌：PLAY 阶段有效。杀→待目标响应（出闪抵消或承受伤害）；桃→回血；闪→仅在被杀时可出，用于抵消。
      */
     @PostMapping(value = "/{roomId}/play", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<Map<String, Object>> playCard(@PathVariable String roomId,
@@ -84,7 +84,14 @@ public class GameController {
         return Mono.fromCallable(() -> {
             var ctxOpt = roomService.getOrCreateContext(roomId);
             var smOpt = roomService.getStateMachine(roomId);
-            if (ctxOpt.isEmpty() || smOpt.isEmpty() || !smOpt.get().canPlayCard()) {
+            if (ctxOpt.isEmpty() || smOpt.isEmpty()) {
+                return Map.<String, Object>of("ok", false, "message", "对局未开始");
+            }
+            // 若有待响应的杀，允许目标出闪（不要求是回合玩家）
+            if (ctxOpt.get().getPendingKill().isPresent()) {
+                return handleRespondWithShan(roomId, body, ctxOpt.get());
+            }
+            if (!smOpt.get().canPlayCard()) {
                 return Map.<String, Object>of("ok", false, "message", "当前不能出牌");
             }
             String playerId = body.get("playerId");
@@ -109,42 +116,151 @@ public class GameController {
             }
             Card card = cardOpt.get();
             String type = card.getRankOrName();
+            if ("闪".equals(type)) {
+                return Map.<String, Object>of("ok", false, "message", "闪只能在被杀时响应使用");
+            }
             if ("杀".equals(type)) {
-                String realTargetId = (targetId == null || targetId.isBlank()) ? playerId : targetId;
-                var targetOpt = ctx.getRoom().getPlayerById(realTargetId);
+                return handlePlaySha(roomId, ctx, sm, player, card, targetId);
+            }
+            if ("桃".equals(type)) {
+                // 桃只能给自己使用，且满血时不能使用
+                if (targetId != null && !targetId.isBlank() && !targetId.equals(playerId)) {
+                    return Map.<String, Object>of("ok", false, "message", "桃只能给自己使用");
+                }
+                var targetOpt = ctx.getRoom().getPlayerById(playerId);
                 if (targetOpt.isEmpty() || !targetOpt.get().isAlive()) {
                     return Map.<String, Object>of("ok", false, "message", "目标无效");
                 }
                 var target = targetOpt.get();
-                player.removeHandCard(card);
-                eventPublisher.publish(new PlayerDamageEvent(ctx, target, player, 1));
-                // 扣血由 DefaultPlayerDamageListener 统一处理，避免重复扣血
-                eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card, target));
-                webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("DAMAGE",
-                        Map.of("targetId", target.getPlayerId(), "targetName", target.getNickname(),
-                                "sourceId", player.getPlayerId(), "sourceName", player.getNickname(), "amount", 1)));
-            } else if ("桃".equals(type)) {
-                String healTarget = (targetId != null && !targetId.isBlank()) ? targetId : playerId;
-                var targetOpt = ctx.getRoom().getPlayerById(healTarget);
-                if (targetOpt.isEmpty() || !targetOpt.get().isAlive()) {
-                    return Map.<String, Object>of("ok", false, "message", "目标无效");
+                if (target.getHp() >= target.getMaxHp()) {
+                    return Map.<String, Object>of("ok", false, "message", "满血时不能使用桃");
                 }
-                var target = targetOpt.get();
                 player.removeHandCard(card);
+                ctx.addToDiscardPile(card);
                 int before = target.getHp();
                 target.setHp(Math.min(target.getMaxHp(), before + 1));
                 eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
-            } else if ("闪".equals(type)) {
-                player.removeHandCard(card);
-                eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
+                ctx.addPlayedCard(playerId, cardId, type, playerId, player.getNickname());
             } else {
                 player.removeHandCard(card);
+                ctx.addToDiscardPile(card);
                 eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
+                ctx.addPlayedCard(playerId, cardId, type, null, null);
             }
             webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
                     Map.of("playerId", playerId, "cardId", cardId, "cardType", type)));
             webSocketHandler.broadcastGameContext(roomId, ctx);
             return buildGameStateResponse(ctx, roomId);
+        });
+    }
+
+    private Map<String, Object> handlePlaySha(String roomId, GameContext ctx, GameStateMachine sm,
+                                             com.game.domain.Player player, Card card, String targetId) {
+        String realTargetId = (targetId == null || targetId.isBlank()) ? player.getPlayerId() : targetId;
+        var targetOpt = ctx.getRoom().getPlayerById(realTargetId);
+        if (targetOpt.isEmpty() || !targetOpt.get().isAlive()) {
+            return Map.<String, Object>of("ok", false, "message", "目标无效");
+        }
+        var target = targetOpt.get();
+        player.removeHandCard(card);
+        ctx.addToDiscardPile(card);
+        eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card, target));
+        ctx.addPlayedCard(player.getPlayerId(), card.getId(), "杀", target.getPlayerId(), target.getNickname());
+        webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
+                Map.of("playerId", player.getPlayerId(), "cardId", card.getId(), "cardType", "杀",
+                        "targetId", target.getPlayerId(), "targetName", target.getNickname())));
+        ctx.setPendingKill(target.getPlayerId(), player.getPlayerId(), player.getNickname(), target.getNickname(), 1);
+        webSocketHandler.broadcastGameContext(roomId, ctx);
+        if (BotService.isBot(target.getPlayerId())) {
+            botService.respondToKill(roomId, ctx);
+            webSocketHandler.broadcastGameContext(roomId, ctx);
+        }
+        return buildGameStateResponse(ctx, roomId);
+    }
+
+    private Map<String, Object> handleRespondWithShan(String roomId, Map<String, String> body, GameContext ctx) {
+        var pendingOpt = ctx.getPendingKill();
+        if (pendingOpt.isEmpty()) {
+            return Map.<String, Object>of("ok", false, "message", "无待响应的杀");
+        }
+        var pending = pendingOpt.get();
+        String targetId = (String) pending.get("targetId");
+        String playerId = body.get("playerId");
+        if (playerId == null || !playerId.equals(targetId)) {
+            return Map.<String, Object>of("ok", false, "message", "仅被杀目标可出闪响应");
+        }
+        String cardId = body.get("cardId");
+        if (cardId == null || cardId.isBlank()) {
+            return Map.<String, Object>of("ok", false, "message", "请选择要出的闪");
+        }
+        var targetOpt = ctx.getRoom().getPlayerById(targetId);
+        if (targetOpt.isEmpty()) {
+            return Map.<String, Object>of("ok", false, "message", "目标不存在");
+        }
+        var target = targetOpt.get();
+        var cardOpt = target.getHandCards().stream().filter(c -> c.getId().equals(cardId)).findFirst();
+        if (cardOpt.isEmpty()) {
+            return Map.<String, Object>of("ok", false, "message", "手牌中无此牌");
+        }
+        Card card = cardOpt.get();
+        if (!"闪".equals(card.getRankOrName())) {
+            return Map.<String, Object>of("ok", false, "message", "只能出闪进行抵消");
+        }
+        target.removeHandCard(card);
+        ctx.addToDiscardPile(card);
+        ctx.clearPendingKill();
+        ctx.addPlayedCard(targetId, cardId, "闪", null, null);
+        eventPublisher.publish(new PlayerPlayCardEvent(ctx, target, card));
+        webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
+                Map.of("playerId", targetId, "cardId", cardId, "cardType", "闪")));
+        webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("SHAN_NEGATED",
+                Map.of("targetId", targetId, "sourceId", pending.get("sourceId"),
+                        "sourceName", pending.get("sourceName"), "message", "出闪抵消了杀")));
+        webSocketHandler.broadcastGameContext(roomId, ctx);
+        return buildGameStateResponse(ctx, roomId);
+    }
+
+    /** 被杀目标选择承受伤害（不出闪） */
+    @PostMapping(value = "/{roomId}/respond", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<Map<String, Object>> respondToKill(@PathVariable String roomId,
+                                                   @RequestBody Map<String, String> body) {
+        return Mono.fromCallable(() -> {
+            var ctxOpt = roomService.getOrCreateContext(roomId);
+            if (ctxOpt.isEmpty()) {
+                return Map.<String, Object>of("ok", false, "message", "对局未开始");
+            }
+            var pendingOpt = ctxOpt.get().getPendingKill();
+            if (pendingOpt.isEmpty()) {
+                return Map.<String, Object>of("ok", false, "message", "无待响应的杀");
+            }
+            var pending = pendingOpt.get();
+            String targetId = (String) pending.get("targetId");
+            String playerId = body != null ? body.get("playerId") : null;
+            if (playerId == null || !playerId.equals(targetId)) {
+                return Map.<String, Object>of("ok", false, "message", "仅被杀目标可响应");
+            }
+            String action = body.get("action");
+            if ("PASS".equals(action) || action == null || action.isBlank()) {
+                GameContext ctx = ctxOpt.get();
+                var targetOpt = ctx.getRoom().getPlayerById(targetId);
+                var sourceOpt = ctx.getRoom().getPlayerById((String) pending.get("sourceId"));
+                int amount = ((Number) pending.getOrDefault("amount", 1)).intValue();
+                if (targetOpt.isPresent() && sourceOpt.isPresent()) {
+                    eventPublisher.publish(new PlayerDamageEvent(ctx, targetOpt.get(), sourceOpt.get(), amount));
+                }
+                webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("DAMAGE",
+                        Map.of("targetId", targetId, "targetName", pending.get("targetName"),
+                                "sourceId", pending.get("sourceId"), "sourceName", pending.get("sourceName"), "amount", amount)));
+                ctx.clearPendingKill();
+                webSocketHandler.broadcastGameContext(roomId, ctx);
+                var smOpt = roomService.getStateMachine(roomId);
+                if (smOpt.isPresent()) {
+                    botService.runBotTurnsUntilHuman(roomId, ctx, smOpt.get());
+                    webSocketHandler.broadcastGameContext(roomId, ctx);
+                }
+                return buildGameStateResponse(ctx, roomId);
+            }
+            return Map.<String, Object>of("ok", false, "message", "无效的响应");
         });
     }
 
@@ -180,21 +296,23 @@ public class GameController {
         });
     }
 
-    /** 构建统一的游戏状态响应：hand、players、phase、currentSeatIndex、roundNumber */
+    /** 构建统一的游戏状态响应：hand、players、phase、currentSeatIndex、roundNumber、pendingKill */
     private Map<String, Object> buildGameStateResponse(GameContext ctx, String roomId) {
         var dto = webSocketHandler.buildContextDTO(ctx);
         List<Card> hand = ctx.getCurrentPlayer()
                 .map(p -> List.copyOf(p.getHandCards()))
                 .orElseGet(List::of);
-        return Map.of(
-                "ok", true,
-                "roomId", roomId,
-                "hand", hand,
-                "players", dto.getPlayers() != null ? dto.getPlayers() : List.of(),
-                "phase", ctx.getCurrentPhase().name(),
-                "currentSeatIndex", ctx.getCurrentSeatIndex(),
-                "roundNumber", ctx.getRoundNumber()
-        );
+        var map = new java.util.HashMap<String, Object>();
+        map.put("ok", true);
+        map.put("roomId", roomId);
+        map.put("hand", hand);
+        map.put("players", dto.getPlayers() != null ? dto.getPlayers() : List.of());
+        map.put("phase", ctx.getCurrentPhase().name());
+        map.put("currentSeatIndex", ctx.getCurrentSeatIndex());
+        map.put("roundNumber", ctx.getRoundNumber());
+        ctx.getPendingKill().ifPresent(pk -> map.put("pendingKill", pk));
+        map.put("battleCards", ctx.getRecentBattleCards());
+        return map;
     }
 
     /**

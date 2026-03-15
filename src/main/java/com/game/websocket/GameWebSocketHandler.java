@@ -152,6 +152,8 @@ public class GameWebSocketHandler implements WebSocketHandler {
             list.add(GameContextDTO.PlayerSnapshot.from(p));
         }
         dto.setPlayers(list);
+        ctx.getPendingKill().ifPresent(dto::setPendingKill);
+        dto.setBattleCards(ctx.getRecentBattleCards());
         return dto;
     }
 

@@ -13,6 +13,7 @@ C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\domain\Card
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\event\DefaultPlayerDamageListener.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\event\GameEvent.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\service\RoomService.java
+C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\domain\PendingKill.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\ThreeKingdomsGameApplication.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\websocket\WebSocketConfig.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\engine\GameContext.java
