@@ -1,9 +1,9 @@
 <template>
   <div
-    class="relative card-face bg-gradient-to-b from-amber-50 to-amber-100/90 text-sanguo-dark cursor-pointer select-none transition-all duration-200 ease-out min-w-[72px] w-[72px] hover:scale-110 hover:z-10 hover:-translate-y-2 hover:shadow-xl hover:shadow-amber-900/30"
+    class="relative card-face bg-gradient-to-b from-amber-50 to-amber-100/90 text-sanguo-dark cursor-pointer select-none transition-all duration-300 ease-out min-w-[72px] w-[72px] hover:scale-110 hover:z-10 hover:-translate-y-2 hover:shadow-xl hover:shadow-amber-900/30 hover:shadow-amber-500/20"
     :class="[
       canPlay ? 'hover:ring-2 hover:ring-sanguo-gold' : 'opacity-80 cursor-not-allowed',
-      { 'ring-2 ring-sanguo-gold scale-105 -translate-y-1': selected }
+      { 'ring-2 ring-sanguo-gold scale-105 -translate-y-1 shadow-amber-500/40': selected }
     ]"
     @click="onClick"
   >

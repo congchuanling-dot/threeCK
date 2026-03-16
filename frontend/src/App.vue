@@ -22,21 +22,21 @@
         </div>
         <div class="flex flex-wrap gap-3 justify-center">
           <button
-            class="px-4 py-2 rounded-lg border border-sanguo-gold/50 text-sanguo-gold hover:bg-sanguo-gold/10"
+            class="px-4 py-2 rounded-lg border border-sanguo-gold/50 text-sanguo-gold hover:bg-sanguo-gold/10 hover:scale-105 active:scale-95 transition-all duration-200"
             @click="connect"
           >
             {{ game.connected ? '已连接' : '连接服务器' }}
           </button>
           <button
             v-if="game.connected"
-            class="px-4 py-2 rounded-lg bg-sanguo-gold/20 border border-sanguo-gold/50 text-sanguo-gold hover:bg-sanguo-gold/30"
+            class="px-4 py-2 rounded-lg bg-sanguo-gold/20 border border-sanguo-gold/50 text-sanguo-gold hover:bg-sanguo-gold/30 hover:scale-105 active:scale-95 hover:shadow-lg hover:shadow-sanguo-gold/20 transition-all duration-200"
             @click="createRoom"
           >
             创建房间
           </button>
           <button
             v-if="game.connected"
-            class="px-4 py-2 rounded-lg bg-amber-800/30 border border-amber-500/50 text-amber-200 hover:bg-amber-700/40"
+            class="px-4 py-2 rounded-lg bg-amber-800/30 border border-amber-500/50 text-amber-200 hover:bg-amber-700/40 hover:scale-105 active:scale-95 hover:shadow-lg hover:shadow-amber-500/20 transition-all duration-200"
             @click="startGameClick"
           >
             开始游戏
@@ -73,16 +73,22 @@
           </div>
         </div>
 
-        <!-- 中央出牌区：固定高度，牌 5s 后消失 -->
-        <div class="flex-shrink-0 h-24 rounded-lg border-2 border-amber-700/40 bg-amber-950/40 flex items-center justify-center gap-2">
+        <!-- 中央出牌区：固定高度，牌 5s 后消失，带入场特效 -->
+        <div
+          ref="battleAreaRef"
+          data-battle-center
+          class="flex-shrink-0 h-24 rounded-lg border-2 border-amber-700/40 bg-amber-950/40 flex items-center justify-center gap-2 shadow-inner transition-all duration-300"
+        >
           <template v-if="displayBattleCards.length">
-            <Card
-              v-for="(c, i) in displayBattleCards"
-              :key="(c.cardId || c.id) + '-' + i"
-              :card="normalizeBattleCard(c)"
-              :can-play="false"
-              class="scale-75 pointer-events-none"
-            />
+            <TransitionGroup name="battle-card" tag="div" class="flex items-center justify-center gap-2">
+              <Card
+                v-for="(c, i) in displayBattleCards"
+                :key="(c.cardId || c.id) + '-' + i"
+                :card="normalizeBattleCard(c)"
+                :can-play="false"
+                class="scale-75 pointer-events-none card-enter"
+              />
+            </TransitionGroup>
           </template>
           <span v-else class="text-slate-500 text-sm">出的牌显示于此</span>
         </div>
@@ -100,10 +106,10 @@
 
         <!-- 手牌 + 操作：始终可见，不收缩 -->
         <div class="flex-shrink-0 rounded-lg border-2 border-amber-700/50 bg-amber-950/40 p-3">
-          <div v-if="isRespondMode" class="mb-2 px-3 py-2 rounded bg-red-900/60 border border-red-500 text-red-100 text-sm">
+          <div v-if="isRespondMode" class="mb-2 px-3 py-2 rounded bg-red-900/60 border border-red-500 text-red-100 text-sm animate-pulse shadow-lg shadow-red-900/30">
             ⚔️ 对你出杀！出闪抵消 / 龙胆(杀当闪) / 承受伤害
           </div>
-          <div v-if="isDyingMode" class="mb-2 px-3 py-2 rounded bg-orange-900/50 border border-orange-500/50 text-orange-200 text-sm">
+          <div v-if="isDyingMode" class="mb-2 px-3 py-2 rounded bg-orange-900/50 border border-orange-500/50 text-orange-200 text-sm animate-pulse shadow-lg shadow-orange-900/30">
             {{ dyingTargetName }} 濒死，是否出桃？
           </div>
           <HandArea
@@ -119,7 +125,7 @@
               <span v-if="needsTarget && !selectedTargetId" class="text-amber-500">→ 选目标</span>
             </span>
             <button
-              class="px-3 py-1.5 rounded bg-amber-600 text-sanguo-dark font-bold text-sm disabled:opacity-40"
+              class="px-3 py-1.5 rounded bg-amber-600 text-sanguo-dark font-bold text-sm disabled:opacity-40 hover:bg-amber-500 active:scale-95 transition-all duration-200 disabled:hover:bg-amber-600 disabled:active:scale-100"
               :disabled="!canConfirmPlay"
               @click="confirmPlay"
             >
@@ -127,7 +133,7 @@
             </button>
             <button
               v-if="isRespondMode && canUseLongdan"
-              class="px-3 py-1.5 rounded border border-sanguo-gold text-sanguo-gold text-sm"
+              class="px-3 py-1.5 rounded border border-sanguo-gold text-sanguo-gold text-sm hover:scale-105 active:scale-95 transition-all duration-200"
               :class="{ 'ring-2 ring-sanguo-gold': longdanMode }"
               @click="longdanMode = !longdanMode"
             >
@@ -135,7 +141,7 @@
             </button>
             <button
               v-if="isRespondMode"
-              class="px-3 py-1.5 rounded border border-red-500 text-red-200 text-sm disabled:opacity-40"
+              class="px-3 py-1.5 rounded border border-red-500 text-red-200 text-sm disabled:opacity-40 hover:scale-105 active:scale-95 transition-all duration-200 disabled:hover:scale-100"
               :disabled="acceptDamageLoading"
               @click="acceptDamage"
             >
@@ -143,19 +149,19 @@
             </button>
             <button
               v-if="isDyingMode"
-              class="px-3 py-1.5 rounded bg-green-600 text-white text-sm disabled:opacity-40"
+              class="px-3 py-1.5 rounded bg-green-600 text-white text-sm disabled:opacity-40 hover:bg-green-500 active:scale-95 transition-all duration-200"
               :disabled="!selectedCard || (selectedCard?.rankOrName || selectedCard?.type) !== '桃'"
               @click="respondDyingTao"
             >
               出桃
             </button>
-            <button v-if="isDyingMode" class="px-3 py-1.5 rounded border border-orange-500 text-orange-300 text-sm" @click="respondDyingPass">
+            <button v-if="isDyingMode" class="px-3 py-1.5 rounded border border-orange-500 text-orange-300 text-sm hover:scale-105 active:scale-95 transition-all duration-200" @click="() => actions.respondDyingPass()">
               不出
             </button>
             <button
-              class="px-3 py-1.5 rounded border border-amber-500 text-amber-300 text-sm disabled:opacity-40"
+              class="px-3 py-1.5 rounded border border-amber-500 text-amber-300 text-sm disabled:opacity-40 hover:scale-105 active:scale-95 transition-all duration-200 disabled:hover:scale-100"
               :disabled="!isMyTurn || isRespondMode || isDyingMode || endRoundLoading"
-              @click="endRound"
+              @click="() => actions.endRound()"
             >
               结束回合
             </button>
@@ -165,7 +171,13 @@
     </section>
 
     <KillArrowOverlay v-if="inBattle" :kill-arrow="game.killArrow?.value ?? game.killArrow ?? null" />
-    <GeneralPreviewModal :visible="generalPreviewVisible" :general="previewGeneral" @close="generalPreviewVisible = false" />
+    <CardFlyOverlay
+      v-if="inBattle"
+      :card-fly="game.cardFly?.value ?? game.cardFly ?? null"
+      :battle-area-ref="battleAreaRef"
+      @done="game.clearCardFly?.()"
+    />
+    <GeneralPreviewModal :visible="generalPreviewVisible" :general="previewGeneral" @close="() => (generalPreviewVisible = false)" />
     <GeneralSelectModal :visible="generalSelectVisible" @confirm="onGeneralSelected" @close="generalSelectVisible = false" />
   </div>
 </template>
@@ -177,11 +189,18 @@ import HandArea from './components/HandArea.vue'
 import PlayerEntity from './components/PlayerEntity.vue'
 import Card from './components/Card.vue'
 import KillArrowOverlay from './components/KillArrowOverlay.vue'
+import CardFlyOverlay from './components/CardFlyOverlay.vue'
 import GeneralPreviewModal from './components/GeneralPreviewModal.vue'
 import GeneralSelectModal from './components/GeneralSelectModal.vue'
 import { useGameSocket } from './composables/useGameSocket.js'
+import { useGameActions } from './composables/useGameActions.js'
+import { useBattleCards } from './composables/useBattleCards.js'
+import { CARD_TYPES, TRICK_NEEDS_TARGET, cardNeedsTargetForPlay, isEquipment } from './constants/cardTypes.js'
+import { getCardType, isSha, isShan, isTao, normalizeCard as normalizeBattleCard } from './utils/cardUtils.js'
 
 const game = useGameSocket()
+const actions = useGameActions(game)
+const { displayBattleCards } = useBattleCards(game)
 const generalPreviewVisible = ref(false)
 const previewGeneral = ref(null)
 const generalSelectVisible = ref(false)
@@ -190,8 +209,8 @@ const botCount = ref(1)
 const selectedCardId = ref(null)
 const selectedTargetId = ref(null)
 const longdanMode = ref(false)
-const acceptDamageLoading = ref(false)
-const endRoundLoading = ref(false)
+const battleAreaRef = ref(null)
+const { acceptDamageLoading, endRoundLoading } = actions
 
 const inBattle = computed(() => !!game.roomId?.value && game.myHandCards?.value?.length > 0)
 const canPlayCard = computed(() => game.currentPhase?.value === 'PLAY')
@@ -232,7 +251,7 @@ const selectedCard = computed(() => handCardsList.value.find((c) => c.id === sel
 const targetSelectable = computed(
   () => !isRespondMode.value && game.players?.value?.find((p) => p.seatIndex === currentSeatIndex.value)?.playerId === game.myPlayerId?.value && canPlayCard.value && selectedCard.value && needsTarget.value
 )
-const needsTarget = computed(() => (selectedCard.value?.rankOrName || selectedCard.value?.type) === '杀')
+const needsTarget = computed(() => cardNeedsTargetForPlay(selectedCard.value?.rankOrName || selectedCard.value?.type))
 const canConfirmPlay = computed(() => {
   if (isRespondMode.value) {
     const t = selectedCard.value?.rankOrName || selectedCard.value?.type
@@ -247,6 +266,12 @@ const canConfirmPlay = computed(() => {
     const me = mePlayer.value
     return me && (me.hp ?? 4) < (me.maxHp ?? 4)
   }
+  if (t === '酒') {
+    const me = mePlayer.value
+    return me && (me.hp ?? 4) < (me.maxHp ?? 4)
+  }
+  if (TRICK_NEEDS_TARGET.includes(t)) return !!selectedTargetId.value
+  if (isEquipment(t)) return true
   return true
 })
 const targetPlayerName = computed(() => game.players?.value?.find((x) => x.playerId === selectedTargetId.value)?.nickname ?? selectedTargetId.value ?? '')
@@ -254,6 +279,8 @@ const playButtonText = computed(() => {
   if (isRespondMode.value) return longdanMode.value && (selectedCard.value?.rankOrName || selectedCard.value?.type) === '杀' ? '龙胆出牌' : '出闪'
   const t = selectedCard.value?.rankOrName || selectedCard.value?.type
   if (t === '杀' && selectedTargetId.value) return `对 ${targetPlayerName.value} 出杀`
+  if (TRICK_NEEDS_TARGET.includes(t) && selectedTargetId.value) return `对 ${targetPlayerName.value} 使用`
+  if (isEquipment(t)) return '装备'
   return '出牌'
 })
 
@@ -261,7 +288,8 @@ function isTargetValid(p) {
   if (!p || (p.hp ?? 4) <= 0) return false
   const t = selectedCard.value?.rankOrName || selectedCard.value?.type
   if (t === '杀') return p.playerId !== game.myPlayerId?.value
-  if (t === '桃') return p.playerId === game.myPlayerId?.value && (p.hp ?? 4) < (p.maxHp ?? 4)
+  if (t === '桃' || t === '酒') return p.playerId === game.myPlayerId?.value && (p.hp ?? 4) < (p.maxHp ?? 4)
+  if (TRICK_NEEDS_TARGET.includes(t)) return p.playerId !== game.myPlayerId?.value
   return false
 }
 
@@ -273,7 +301,8 @@ function onSelectCard(card) {
     if (longdanMode.value && ct !== '杀') return
   } else if (isDyingMode.value) {
     if ((card.rankOrName || card.type) !== '桃') return
-  } else if (!canPlayCard.value || (card.rankOrName || card.type) === '闪') return
+  } else if (!canPlayCard.value) return
+  else if ((card.rankOrName || card.type) === '闪') return
   selectedCardId.value = selectedCardId.value === card.id ? null : card.id
   if (!selectedCardId.value) selectedTargetId.value = null
 }
@@ -285,9 +314,15 @@ function onSelectTarget(p) {
 
 async function confirmPlay() {
   if (!canConfirmPlay.value || !selectedCard.value) return
-  await playCard(selectedCard.value)
-  selectedCardId.value = null
-  selectedTargetId.value = null
+  const ok = await actions.playCard(selectedCard.value, {
+    targetId: selectedTargetId.value,
+    useLongdan: isRespondMode.value && longdanMode.value,
+  })
+  if (ok) {
+    selectedCardId.value = null
+    selectedTargetId.value = null
+    longdanMode.value = false
+  }
 }
 
 function connect() { game.connect() }
@@ -297,180 +332,26 @@ function createRoom() {
 
 async function onGeneralSelected(generalId) {
   generalSelectVisible.value = false
-  const rid = game.roomId?.value
-  const pid = game.myPlayerId?.value
-  if (!rid || !pid) return
-  try {
-    const res = await fetch(`/api/game/${rid}/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: pid, generalId }),
-    })
-    const data = await res.json()
-    if (data?.ok) {
-      game.addLog('系统', '游戏开始')
-      game.applyGameState(data)
-    } else if (data?.message) {
-      game.addLog('系统', data.message)
-    }
-  } catch (e) {
-    console.error('startGame failed', e)
-  }
-}
-
-async function playCard(card) {
-  const rid = game.roomId?.value
-  const pid = game.myPlayerId?.value
-  if (!rid || !pid || !card?.id) return
-  const cardType = card.rankOrName || card.type
-  let targetId = selectedTargetId.value
-  if (!targetId && (cardType === '杀' || cardType === '桃')) {
-    targetId = cardType === '杀' ? game.players?.value?.find((p) => p.playerId !== pid && (p.hp ?? 4) > 0)?.playerId : pid
-  }
-  const useLongdan = isRespondMode.value && longdanMode.value && cardType === '杀'
-  try {
-    const body = { playerId: pid, cardId: card.id, targetId }
-    if (useLongdan) body.skillId = 'longdan'
-    const res = await fetch(`/api/game/${rid}/play`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const data = await res.json()
-    if (data?.ok) {
-      game.applyGameState(data)
-      longdanMode.value = false
-    } else if (data?.message) {
-      game.addLog('系统', data.message)
-    }
-  } catch (e) {
-    console.error('playCard failed', e)
-  }
+  await actions.startGame(generalId)
 }
 
 async function respondDyingTao() {
-  const rid = game.roomId?.value
-  const pid = game.myPlayerId?.value
   const card = selectedCard.value
-  if (!rid || !pid || !isDyingMode.value || !card || (card.rankOrName || card.type) !== '桃') return
-  try {
-    const res = await fetch(`/api/game/${rid}/respondDying`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: pid, action: 'USE_TAO', cardId: card.id }),
-    })
-    const data = await res.json()
-    if (data?.ok) {
-      game.applyGameState(data)
-      selectedCardId.value = null
-    } else if (data?.message) {
-      game.addLog('系统', data.message)
-    }
-  } catch (e) {
-    console.error('respondDyingTao failed', e)
-  }
-}
-
-async function respondDyingPass() {
-  const rid = game.roomId?.value
-  const pid = game.myPlayerId?.value
-  if (!rid || !pid || !isDyingMode.value) return
-  try {
-    const res = await fetch(`/api/game/${rid}/respondDying`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: pid, action: 'PASS' }),
-    })
-    const data = await res.json()
-    if (data?.ok) game.applyGameState(data)
-    else if (data?.message) game.addLog('系统', data.message)
-  } catch (e) {
-    console.error('respondDyingPass failed', e)
-  }
+  if (!card || !isTao(card)) return
+  await actions.respondDyingTao(card.id)
+  selectedCardId.value = null
 }
 
 async function acceptDamage() {
-  const rid = game.roomId?.value
-  const pid = game.myPlayerId?.value
-  if (!rid || !pid || !isRespondMode.value) return
-  acceptDamageLoading.value = true
-  try {
-    const res = await fetch(`/api/game/${rid}/respond`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: pid, action: 'PASS' }),
-    })
-    const data = await res.json()
-    if (data?.ok) {
-      game.applyGameState(data)
-      selectedCardId.value = null
-      selectedTargetId.value = null
-    } else {
-      game.addLog('系统', data?.message || '失败')
-    }
-  } catch (e) {
-    console.error('acceptDamage failed', e)
-  } finally {
-    acceptDamageLoading.value = false
-  }
-}
-
-async function endRound() {
-  const rid = game.roomId?.value
-  const pid = game.myPlayerId?.value
-  if (!rid || !pid) return
-  endRoundLoading.value = true
-  try {
-    const res = await fetch(`/api/game/${rid}/endRound`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: pid }),
-    })
-    const data = await res.json()
-    if (data?.ok) game.applyGameState(data)
-    else if (data?.message) game.addLog('系统', data.message)
-  } catch (e) {
-    console.error('endRound failed', e)
-  } finally {
-    endRoundLoading.value = false
-  }
+  await actions.acceptDamage()
+  selectedCardId.value = null
+  selectedTargetId.value = null
 }
 
 function onGeneralGenerated(g) {
   previewGeneral.value = g
   generalPreviewVisible.value = true
 }
-
-// 中央出牌区：牌 5 秒后消失
-const displayBattleCards = ref([])
-const prevBattleIds = ref(new Set())
-function normalizeBattleCard(item) {
-  if (item?.id && (item?.suit || item?.rankOrName)) return item
-  return {
-    id: item?.cardId || item?.id || '?',
-    suit: item?.suit || 'SPADE',
-    rankOrName: item?.rankOrName || item?.rank || item?.cardType || item?.type || '?',
-  }
-}
-watch(
-  () => game.battleCards?.value ?? [],
-  (newCards) => {
-    const newIds = new Set((newCards || []).map((c) => c.cardId || c.id).filter(Boolean))
-    const prev = prevBattleIds.value
-    displayBattleCards.value = displayBattleCards.value.filter((dc) => newIds.has(dc?.cardId || dc?.id))
-    for (const c of newCards || []) {
-      const id = c.cardId || c.id
-      if (!id || prev.has(id)) continue
-      const card = { ...normalizeBattleCard(c), cardId: id }
-      displayBattleCards.value.push(card)
-      setTimeout(() => {
-        displayBattleCards.value = displayBattleCards.value.filter((x) => (x?.cardId || x?.id) !== id)
-      }, 5000)
-    }
-    prevBattleIds.value = newIds
-  },
-  { immediate: true }
-)
 
 watch(isRespondMode, (v) => { if (!v) longdanMode.value = false })
 

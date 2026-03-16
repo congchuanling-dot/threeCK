@@ -21,6 +21,7 @@ export function useGameSocket() {
   const battleCards = ref([]) // 当前出的牌（最近几张）
   const gameLog = ref([])
   const killArrow = ref(null) // 出杀时箭头 { fromPlayerId, toPlayerId }，约1.5秒后自动清除
+  const cardFly = ref(null) // 卡牌飞行动画 { card: { id, rankOrName }, fromPlayerId }，用于指向性出牌效果
   const pendingKill = ref(null) // 待响应的杀 { targetId, sourceId, sourceName, targetName, amount }
   const pendingDeath = ref(null) // 濒死轮询 { targetId, targetName, askingSeatIndex }
   const ws = shallowRef(null)
@@ -115,6 +116,11 @@ export function useGameSocket() {
             const p = players.value.find(x => x.playerId === data.playerId)
             const cardType = data.cardType || '?'
             addLog(p?.nickname ?? data.playerId, `打出了 ${cardType}`)
+            // 卡牌飞行动画：从出牌者飞向中央牌区
+            cardFly.value = {
+              card: { id: data.cardId, rankOrName: cardType },
+              fromPlayerId: data.playerId,
+            }
             if (data.cardType === '杀' && data.targetId) {
               killArrow.value = { fromPlayerId: data.playerId, toPlayerId: data.targetId }
               setTimeout(() => { killArrow.value = null }, 1600)
@@ -203,6 +209,10 @@ export function useGameSocket() {
     myHandCards.value = []
   }
 
+  function clearCardFly() {
+    cardFly.value = null
+  }
+
   return {
     connected,
     roomId,
@@ -215,6 +225,8 @@ export function useGameSocket() {
     battleCards,
     gameLog,
     killArrow,
+    cardFly,
+    clearCardFly,
     connect,
     send,
     createRoom,

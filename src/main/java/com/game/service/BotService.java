@@ -3,6 +3,7 @@ package com.game.service;
 import com.game.domain.Card;
 import com.game.domain.Player;
 import com.game.engine.GameContext;
+import com.game.service.CardPlayService;
 import com.game.engine.GameStateMachine;
 import com.game.event.GameEventPublisher;
 import com.game.event.PlayerDamageEvent;
@@ -30,10 +31,13 @@ public class BotService {
 
     private final GameEventPublisher eventPublisher;
     private final GameWebSocketHandler webSocketHandler;
+    private final CardPlayService cardPlayService;
 
-    public BotService(GameEventPublisher eventPublisher, GameWebSocketHandler webSocketHandler) {
+    public BotService(GameEventPublisher eventPublisher, GameWebSocketHandler webSocketHandler,
+                      CardPlayService cardPlayService) {
         this.eventPublisher = eventPublisher;
         this.webSocketHandler = webSocketHandler;
+        this.cardPlayService = cardPlayService;
     }
 
     /** 判断是否为机器人 */
@@ -178,12 +182,42 @@ public class BotService {
             return false;
         }
 
-        // 1. 有「杀」则打第一个存活的非bot
         Optional<Player> humanTarget = ctx.getRoom().getPlayers().stream()
                 .filter(p -> p.isAlive() && !isBot(p.getPlayerId()))
                 .findFirst();
+
+        // 0. 锦囊/装备：无中生有、桃园结义、南蛮入侵等无目标；装备给自己；需目标锦囊打人类
+        Card trickOrEquip = hand.stream()
+                .filter(c -> CardPlayService.isHandledByCardSystem(c.getRankOrName()))
+                .findFirst()
+                .orElse(null);
+        if (trickOrEquip != null) {
+            String name = trickOrEquip.getRankOrName();
+            String tid = null;
+            if (CardPlayService.isEquipment(name)) {
+                tid = bot.getPlayerId();
+            } else if (CardPlayService.trickNeedsTarget(name)) {
+                if (humanTarget.isPresent()) tid = humanTarget.get().getPlayerId();
+            }
+            // 无目标锦囊：无中生有、南蛮入侵、万箭齐发、五谷丰登、桃园结义等
+            if (tid != null || !CardPlayService.trickNeedsTarget(name)) {
+                if (tid == null && "桃园结义".equals(name)
+                        && !ctx.getRoom().getPlayers().stream().anyMatch(p -> p.isAlive() && p.getHp() < p.getMaxHp())) {
+                    // 桃园结义但无人受伤，跳过
+                } else {
+                    botDelay();
+                    doPlayTrickOrEquipment(roomId, ctx, bot, trickOrEquip, tid);
+                    webSocketHandler.broadcastGameContext(roomId, ctx);
+                    return false;
+                }
+            }
+        }
+
+        // 1. 有「杀」则打第一个存活的非bot（每回合1次，诸葛连弩无限）
+        int shaCount = ctx.getAttribute("shaCountThisTurn").map(o -> ((Number) o).intValue()).orElse(0);
+        boolean canPlaySha = shaCount < 1 || com.game.card.adapter.PlayerCardTargetAdapter.hasZhuGeLianNu(bot.getPlayerId());
         Card sha = hand.stream().filter(c -> "杀".equals(c.getRankOrName())).findFirst().orElse(null);
-        if (sha != null && humanTarget.isPresent()) {
+        if (sha != null && humanTarget.isPresent() && canPlaySha) {
             botDelay();
             boolean pendingHuman = doPlayCard(roomId, ctx, bot, sha, humanTarget.get().getPlayerId());
             webSocketHandler.broadcastGameContext(roomId, ctx);
@@ -211,6 +245,21 @@ public class BotService {
         return false;
     }
 
+    /** 机器人出锦囊或装备，执行卡牌效果 */
+    private void doPlayTrickOrEquipment(String roomId, GameContext ctx, Player player, Card card, String targetId) {
+        player.removeHandCard(card);
+        ctx.addToDiscardPile(card);
+        var target = (targetId != null && !targetId.isBlank())
+                ? ctx.getRoom().getPlayerById(targetId).orElse(null) : null;
+        cardPlayService.executeCardEffect(ctx, player, card, target);
+        eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
+        String tid = target != null ? target.getPlayerId() : null;
+        String tname = target != null ? target.getNickname() : null;
+        ctx.addPlayedCard(player.getPlayerId(), card.getId(), card.getRankOrName(), tid, tname);
+        webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
+                Map.of("playerId", player.getPlayerId(), "cardId", card.getId(), "cardType", card.getRankOrName())));
+    }
+
     /** 若 bot 杀的是人类，设置 pendingKill 等待响应，返回 true 表示应暂停 bot 回合 */
     private boolean doPlayCard(String roomId, GameContext ctx, Player player, Card card, String targetId) {
         player.removeHandCard(card);
@@ -220,6 +269,8 @@ public class BotService {
             var targetOpt = ctx.getRoom().getPlayerById(targetId);
             if (targetOpt.isPresent() && targetOpt.get().isAlive()) {
                 var target = targetOpt.get();
+                int shaCount = ctx.getAttribute("shaCountThisTurn").map(o -> ((Number) o).intValue()).orElse(0);
+                ctx.setAttribute("shaCountThisTurn", shaCount + 1);
                 ctx.addPlayedCard(player.getPlayerId(), card.getId(), "杀", target.getPlayerId(), target.getNickname());
                 eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card, target));
                 webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
@@ -259,6 +310,7 @@ public class BotService {
 
     private void endBotRound(String roomId, GameContext ctx, GameStateMachine sm) {
         ctx.setCurrentSeatIndex(ctx.nextAliveSeatIndex());
+        ctx.setAttribute("shaCountThisTurn", 0); // 新回合重置出杀次数
         ctx.setCurrentPhase(com.game.domain.Phase.DRAW);
         ctx.incrementRound();
         sm.processDrawPhase(2);

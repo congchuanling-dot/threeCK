@@ -10,3 +10,52 @@ body {
 .card-face {
   @apply rounded-lg border-2 border-sanguo-gold/40 shadow-lg shadow-black/30;
 }
+
+/* 回合光晕动画 */
+@keyframes turn-glow {
+  0%, 100% { box-shadow: 0 0 12px rgba(245, 158, 11, 0.4); }
+  50% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.7); }
+}
+
+/* 卡牌入场动画 */
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.8) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* 按钮微光 */
+@keyframes btn-glow {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.3)); }
+  50% { filter: drop-shadow(0 0 8px rgba(245, 158, 11, 0.5)); }
+}
+
+.turn-glow {
+  animation: turn-glow 2s ease-in-out infinite;
+}
+
+.card-enter {
+  animation: card-enter 0.3s ease-out forwards;
+}
+
+/* TransitionGroup 出牌区入场/离场 */
+.battle-card-enter-active,
+.battle-card-leave-active {
+  transition: all 0.3s ease;
+}
+.battle-card-enter-from {
+  opacity: 0;
+  transform: scale(0.8) translateY(-10px);
+}
+.battle-card-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
+}
+.battle-card-move {
+  transition: transform 0.3s ease;
+}

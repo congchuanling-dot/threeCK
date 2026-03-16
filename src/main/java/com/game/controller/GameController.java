@@ -7,7 +7,9 @@ import com.game.engine.GameStateMachine;
 import com.game.event.GameEventPublisher;
 import com.game.event.PlayerDamageEvent;
 import com.game.event.PlayerPlayCardEvent;
+import com.game.card.adapter.PlayerCardTargetAdapter;
 import com.game.service.BotService;
+import com.game.service.CardPlayService;
 import com.game.service.RoomService;
 import com.game.skill.GeneralRegistry;
 import com.game.skill.skills.LongdanSkill;
@@ -32,17 +34,20 @@ public class GameController {
     private final GameWebSocketHandler webSocketHandler;
     private final com.game.engine.DefaultGameStarter defaultGameStarter;
     private final BotService botService;
+    private final com.game.service.CardPlayService cardPlayService;
 
     public GameController(RoomService roomService,
                           GameEventPublisher eventPublisher,
                           GameWebSocketHandler webSocketHandler,
                           com.game.engine.DefaultGameStarter defaultGameStarter,
-                          BotService botService) {
+                          BotService botService,
+                          com.game.service.CardPlayService cardPlayService) {
         this.roomService = roomService;
         this.eventPublisher = eventPublisher;
         this.webSocketHandler = webSocketHandler;
         this.defaultGameStarter = defaultGameStarter;
         this.botService = botService;
+        this.cardPlayService = cardPlayService;
     }
 
     /**
@@ -177,11 +182,43 @@ public class GameController {
                 target.setHp(Math.min(target.getMaxHp(), before + 1));
                 eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
                 ctx.addPlayedCard(playerId, cardId, type, playerId, player.getNickname());
-            } else {
+            } else if ("酒".equals(type)) {
+                var healTarget = ctx.getRoom().getPlayerById(targetId != null && !targetId.isBlank() ? targetId : playerId);
+                if (healTarget.isEmpty() || !healTarget.get().isAlive()) {
+                    return Map.<String, Object>of("ok", false, "message", "目标无效");
+                }
+                var t = healTarget.get();
+                if (t.getHp() >= t.getMaxHp()) {
+                    return Map.<String, Object>of("ok", false, "message", "目标满血时酒无效");
+                }
                 player.removeHandCard(card);
                 ctx.addToDiscardPile(card);
+                t.setHp(Math.min(t.getMaxHp(), t.getHp() + 1));
                 eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
-                ctx.addPlayedCard(playerId, cardId, type, null, null);
+                ctx.addPlayedCard(playerId, cardId, type, t.getPlayerId(), t.getNickname());
+            } else if (CardPlayService.isHandledByCardSystem(type)) {
+                if (CardPlayService.isEquipment(type)) {
+                    targetId = playerId;
+                } else if (CardPlayService.trickNeedsTarget(type)) {
+                    if (targetId == null || targetId.isBlank()) {
+                        return Map.<String, Object>of("ok", false, "message", "此锦囊需要指定目标");
+                    }
+                    var targetOpt = ctx.getRoom().getPlayerById(targetId);
+                    if (targetOpt.isEmpty() || !targetOpt.get().isAlive()) {
+                        return Map.<String, Object>of("ok", false, "message", "目标无效");
+                    }
+                }
+                player.removeHandCard(card);
+                ctx.addToDiscardPile(card);
+                var targetPlayer = (targetId != null && !targetId.isBlank())
+                        ? ctx.getRoom().getPlayerById(targetId).orElse(null) : null;
+                cardPlayService.executeCardEffect(ctx, player, card, targetPlayer);
+                eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
+                String tid = targetPlayer != null ? targetPlayer.getPlayerId() : null;
+                String tname = targetPlayer != null ? targetPlayer.getNickname() : null;
+                ctx.addPlayedCard(playerId, cardId, type, tid, tname);
+            } else {
+                return Map.<String, Object>of("ok", false, "message", "未知牌型: " + type);
             }
             webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
                     Map.of("playerId", playerId, "cardId", cardId, "cardType", type)));
@@ -192,6 +229,11 @@ public class GameController {
 
     private Map<String, Object> handlePlaySha(String roomId, GameContext ctx, GameStateMachine sm,
                                              com.game.domain.Player player, Card card, String targetId) {
+        // 每回合出杀次数限制：1 次，诸葛连弩无限
+        int shaCount = ctx.getAttribute("shaCountThisTurn").map(o -> ((Number) o).intValue()).orElse(0);
+        if (shaCount >= 1 && !com.game.card.adapter.PlayerCardTargetAdapter.hasZhuGeLianNu(player.getPlayerId())) {
+            return Map.<String, Object>of("ok", false, "message", "本回合已出过杀，装备诸葛连弩可无限出杀");
+        }
         String realTargetId = (targetId == null || targetId.isBlank()) ? player.getPlayerId() : targetId;
         var targetOpt = ctx.getRoom().getPlayerById(realTargetId);
         if (targetOpt.isEmpty() || !targetOpt.get().isAlive()) {
@@ -205,6 +247,7 @@ public class GameController {
         webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
                 Map.of("playerId", player.getPlayerId(), "cardId", card.getId(), "cardType", "杀",
                         "targetId", target.getPlayerId(), "targetName", target.getNickname())));
+        ctx.setAttribute("shaCountThisTurn", shaCount + 1);
         ctx.setPendingKill(target.getPlayerId(), player.getPlayerId(), player.getNickname(), target.getNickname(), 1);
         webSocketHandler.broadcastGameContext(roomId, ctx);
         if (BotService.isBot(target.getPlayerId())) {
@@ -439,6 +482,7 @@ public class GameController {
             }
             GameStateMachine sm = smOpt.get();
             ctx.setCurrentSeatIndex(ctx.nextAliveSeatIndex());
+            ctx.setAttribute("shaCountThisTurn", 0); // 新回合重置出杀次数
             ctx.setCurrentPhase(Phase.DRAW);
             ctx.incrementRound();
             List<Card> drawn = sm.processDrawPhase(2);

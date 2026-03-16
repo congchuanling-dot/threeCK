@@ -1,10 +1,12 @@
 <template>
   <div
-    class="relative w-36 flex-shrink-0 rounded-xl overflow-hidden transition-all duration-200"
+    :data-player-id="player?.playerId"
+    class="relative w-36 flex-shrink-0 rounded-xl overflow-hidden transition-all duration-300 ease-out"
     :class="[
       frameBase,
-      selectable && 'cursor-pointer hover:scale-105 hover:shadow-2xl',
-      selected && 'ring-2 ring-amber-400 scale-105 shadow-2xl shadow-amber-500/30'
+      selectable && 'cursor-pointer hover:scale-105 hover:shadow-2xl hover:shadow-amber-500/20',
+      selected && 'ring-2 ring-amber-400 scale-105 shadow-2xl shadow-amber-500/30',
+      isCurrentTurn && 'ring-1 ring-amber-500/60 turn-glow'
     ]"
     @click="onClick"
   >
@@ -30,8 +32,27 @@
         <span class="text-slate-400">{{ player.maxHp ?? 4 }}</span>
         <span class="text-slate-500 text-xs ml-1">手牌{{ player.handCount ?? 0 }}</span>
       </div>
+      <!-- 装备栏：武器、防具、-1马、+1马 -->
+      <div class="mt-2 grid grid-cols-2 gap-1 text-[10px]">
+        <div class="flex items-center gap-0.5 truncate" title="武器">
+          <span class="text-sanguo-gold/70 shrink-0">⚔</span>
+          <span class="truncate text-amber-200/90">{{ player.weapon?.rankOrName || player.weapon?.type || '无' }}</span>
+        </div>
+        <div class="flex items-center gap-0.5 truncate" title="防具">
+          <span class="text-sanguo-gold/70 shrink-0">🛡</span>
+          <span class="truncate text-amber-200/90">{{ player.armor?.rankOrName || player.armor?.type || '无' }}</span>
+        </div>
+        <div class="flex items-center gap-0.5 truncate" title="-1马(进攻)">
+          <span class="text-sanguo-gold/70 shrink-0">-1</span>
+          <span class="truncate text-amber-200/90">{{ player.offensiveHorse?.rankOrName || player.offensiveHorse?.type || '无' }}</span>
+        </div>
+        <div class="flex items-center gap-0.5 truncate" title="+1马(防御)">
+          <span class="text-sanguo-gold/70 shrink-0">+1</span>
+          <span class="truncate text-amber-200/90">{{ player.defensiveHorse?.rankOrName || player.defensiveHorse?.type || '无' }}</span>
+        </div>
+      </div>
     </div>
-    <div v-if="isCurrentTurn" class="absolute top-0 right-0 px-2 py-0.5 bg-amber-500/90 text-sanguo-dark text-xs font-bold rounded-bl-lg">
+    <div v-if="isCurrentTurn" class="absolute top-0 right-0 px-2 py-0.5 bg-amber-500/90 text-sanguo-dark text-xs font-bold rounded-bl-lg turn-glow shadow-lg shadow-amber-500/50">
       回合中
     </div>
     <div v-if="selectable && !selected" class="absolute inset-0 flex items-center justify-center bg-amber-500/10 rounded-xl pointer-events-none">

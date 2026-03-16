@@ -1,5 +1,6 @@
 package com.game.engine;
 
+import com.game.constants.CardType;
 import com.game.domain.Card;
 import com.game.domain.Phase;
 import com.game.domain.Player;
@@ -25,10 +26,15 @@ public class DefaultGameStarter implements RoomService.GameStarter {
 
     private static final AtomicInteger CARD_ID = new AtomicInteger(0);
 
-    /** 52 张牌构成：杀 30、闪 12、桃 10 */
+    /** 基础牌 */
     private static final int COUNT_SHA = 30;
     private static final int COUNT_SHAN = 12;
     private static final int COUNT_TAO = 10;
+    private static final int COUNT_JIU = 5;
+    /** 锦囊牌（各 2 张） */
+    private static final String[] TRICK_NAMES = {"无中生有", "南蛮入侵", "万箭齐发", "过河拆桥", "顺手牵羊", "五谷丰登", "桃园结义", "决斗"};
+    /** 装备牌（各 1 张） */
+    private static final String[] EQUIP_NAMES = {"诸葛连弩", "青釭剑", "八卦阵", "仁王盾", "赤兔", "的卢"};
 
     private final GameEventPublisher eventPublisher;
 
@@ -54,6 +60,7 @@ public class DefaultGameStarter implements RoomService.GameStarter {
         context.setCurrentSeatIndex(0);
         context.setCurrentPhase(Phase.DRAW);
         context.setDrawnThisTurn(false);
+        context.setAttribute("shaCountThisTurn", 0);
 
         stateMachine.setOnTransition(transition -> {
             if (eventPublisher != null) {
@@ -62,21 +69,35 @@ public class DefaultGameStarter implements RoomService.GameStarter {
         });
     }
 
-    /** 52 张基础牌：杀、闪、桃，用不同花色区分 */
+    /** 基础牌 + 锦囊 + 装备 */
     private static List<Card> buildBaseDeck() {
         List<Card> deck = new ArrayList<>();
         Suit[] suits = Suit.values();
         int idx = 0;
         for (int i = 0; i < COUNT_SHA; i++) {
-            deck.add(new Card("C" + CARD_ID.incrementAndGet(), suits[idx % suits.length], "杀"));
+            deck.add(new Card("C" + CARD_ID.incrementAndGet(), suits[idx % suits.length], CardType.SHA));
             idx++;
         }
         for (int i = 0; i < COUNT_SHAN; i++) {
-            deck.add(new Card("C" + CARD_ID.incrementAndGet(), suits[idx % suits.length], "闪"));
+            deck.add(new Card("C" + CARD_ID.incrementAndGet(), suits[idx % suits.length], CardType.SHAN));
             idx++;
         }
         for (int i = 0; i < COUNT_TAO; i++) {
-            deck.add(new Card("C" + CARD_ID.incrementAndGet(), suits[idx % suits.length], "桃"));
+            deck.add(new Card("C" + CARD_ID.incrementAndGet(), suits[idx % suits.length], CardType.TAO));
+            idx++;
+        }
+        for (int i = 0; i < COUNT_JIU; i++) {
+            deck.add(new Card("C" + CARD_ID.incrementAndGet(), suits[idx % suits.length], CardType.JIU));
+            idx++;
+        }
+        for (String name : TRICK_NAMES) {
+            for (int k = 0; k < 2; k++) {
+                deck.add(new Card("C" + CARD_ID.incrementAndGet(), suits[idx % suits.length], name));
+                idx++;
+            }
+        }
+        for (String name : EQUIP_NAMES) {
+            deck.add(new Card("C" + CARD_ID.incrementAndGet(), suits[idx % suits.length], name));
             idx++;
         }
         return deck;

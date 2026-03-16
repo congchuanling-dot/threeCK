@@ -105,6 +105,14 @@ public class GameContextDTO {
         private List<Card> hand;
         /** 武将信息 { id, name, skills: [{ id, name, description }] }，便于前端展示与技能交互 */
         private GeneralSnapshot general;
+        /** 装备：武器 */
+        private Card weapon;
+        /** 装备：防具 */
+        private Card armor;
+        /** 装备：-1马（进攻马） */
+        private Card offensiveHorse;
+        /** 装备：+1马（防御马） */
+        private Card defensiveHorse;
 
         public static PlayerSnapshot from(com.game.domain.Player p) {
             PlayerSnapshot s = new PlayerSnapshot();
@@ -121,6 +129,11 @@ public class GameContextDTO {
                     s.setGeneral(GeneralSnapshot.from(g));
                 });
             }
+            var eq = com.game.card.adapter.PlayerCardTargetAdapter.getEquipmentAsDomain(p.getPlayerId());
+            s.setWeapon(eq.get("weapon"));
+            s.setArmor(eq.get("armor"));
+            s.setOffensiveHorse(eq.get("offensiveHorse"));
+            s.setDefensiveHorse(eq.get("defensiveHorse"));
             return s;
         }
 
@@ -143,6 +156,14 @@ public class GameContextDTO {
         public void setAlive(boolean alive) { this.alive = alive; }
         public List<Card> getHand() { return hand; }
         public void setHand(List<Card> hand) { this.hand = hand; }
+        public Card getWeapon() { return weapon; }
+        public void setWeapon(Card weapon) { this.weapon = weapon; }
+        public Card getArmor() { return armor; }
+        public void setArmor(Card armor) { this.armor = armor; }
+        public Card getOffensiveHorse() { return offensiveHorse; }
+        public void setOffensiveHorse(Card offensiveHorse) { this.offensiveHorse = offensiveHorse; }
+        public Card getDefensiveHorse() { return defensiveHorse; }
+        public void setDefensiveHorse(Card defensiveHorse) { this.defensiveHorse = defensiveHorse; }
     }
 
     /** 武将快照，便于前端展示与技能交互，可扩展以支持 AI 生成武将 */
