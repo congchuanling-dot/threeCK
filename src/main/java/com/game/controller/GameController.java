@@ -9,6 +9,8 @@ import com.game.event.PlayerDamageEvent;
 import com.game.event.PlayerPlayCardEvent;
 import com.game.service.BotService;
 import com.game.service.RoomService;
+import com.game.skill.GeneralRegistry;
+import com.game.skill.skills.LongdanSkill;
 import com.game.websocket.GameMessage;
 import com.game.websocket.GameWebSocketHandler;
 import org.springframework.http.MediaType;
@@ -44,7 +46,24 @@ public class GameController {
     }
 
     /**
+     * 可选武将列表（用于选将框）。
+     */
+    @GetMapping(value = "/generals", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<List<Map<String, Object>>> listGenerals() {
+        return Mono.fromCallable(() ->
+                GeneralRegistry.listSelectable().stream()
+                        .map(g -> Map.<String, Object>of(
+                                "id", g.getId(),
+                                "name", g.getName(),
+                                "skills", g.getSkills().stream()
+                                        .map(s -> Map.of("id", s.getId(), "name", s.getName(), "description", s.getDescription() != null ? s.getDescription() : ""))
+                                        .toList()))
+                        .toList());
+    }
+
+    /**
      * 开局：仅房主可触发。初始化牌堆（52 张杀/闪/桃）、发 4 张、当前玩家摸 2 张进入 PLAY 阶段，并全量推送。
+     * body 可含 generalId：房主选择的武将（选将框）。
      */
     @PostMapping(value = "/{roomId}/start", produces = MediaType.APPLICATION_JSON_VALUE)
     public Mono<Map<String, Object>> startGame(@PathVariable String roomId,
@@ -52,7 +71,9 @@ public class GameController {
         return Mono.fromCallable(() -> {
             String playerId = body != null && body.get("playerId") != null
                     ? body.get("playerId").toString() : null;
-            var resultOpt = roomService.startGame(roomId, playerId, defaultGameStarter);
+            String ownerGeneralId = body != null && body.get("generalId") != null
+                    ? body.get("generalId").toString() : "zhaoyun";
+            var resultOpt = roomService.startGame(roomId, playerId, defaultGameStarter, ownerGeneralId);
             if (resultOpt.isEmpty()) {
                 return Map.<String, Object>of("ok", false, "message",
                         playerId != null && roomService.getRoom(roomId).isPresent()
@@ -218,6 +239,24 @@ public class GameController {
             return Map.<String, Object>of("ok", false, "message", "手牌中无此牌");
         }
         Card card = cardOpt.get();
+        String skillId = body.get("skillId");
+        if ("longdan".equals(skillId)) {
+            if (!"杀".equals(card.getRankOrName())) {
+                return Map.<String, Object>of("ok", false, "message", "龙胆技能只能将杀当闪使用");
+            }
+            var general = GeneralRegistry.get(target.getGeneralId()).orElse(null);
+            if (general == null || general.getSkillById("longdan") == null) {
+                return Map.<String, Object>of("ok", false, "message", "你不具有龙胆技能");
+            }
+            if (LongdanSkill.respondWithShaAsShan(roomId, ctx, target, card, pending,
+                    eventPublisher, webSocketHandler)) {
+                roomService.getStateMachine(roomId).ifPresent(sm -> {
+                    botService.runBotTurnsUntilHuman(roomId, ctx, sm);
+                    webSocketHandler.broadcastGameContext(roomId, ctx);
+                });
+                return buildGameStateResponse(ctx, roomId);
+            }
+        }
         if (!"闪".equals(card.getRankOrName())) {
             return Map.<String, Object>of("ok", false, "message", "只能出闪进行抵消");
         }

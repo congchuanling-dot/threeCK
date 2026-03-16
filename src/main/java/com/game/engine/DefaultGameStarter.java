@@ -4,6 +4,8 @@ import com.game.domain.Card;
 import com.game.domain.Phase;
 import com.game.domain.Player;
 import com.game.domain.Suit;
+import com.game.service.BotService;
+import com.game.skill.GeneralRegistry;
 import com.game.event.GameEventPublisher;
 import com.game.event.PhaseChangeEvent;
 import com.game.service.RoomService;
@@ -44,6 +46,9 @@ public class DefaultGameStarter implements RoomService.GameStarter {
         for (Player p : context.getRoom().getPlayers()) {
             List<Card> hand = context.drawFromPile(handSize);
             p.addHandCards(hand);
+            // 分配武将：房主用选将框选的，机器人默认
+            String ownerGeneralId = context.getAttribute("ownerGeneralId").map(Object::toString).orElse("zhaoyun");
+            p.setGeneralId(BotService.isBot(p.getPlayerId()) ? "default" : ownerGeneralId);
         }
 
         context.setCurrentSeatIndex(0);

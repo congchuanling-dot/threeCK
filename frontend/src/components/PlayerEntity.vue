@@ -21,6 +21,15 @@
       <div class="text-center font-semibold text-amber-100 text-sm truncate">
         {{ player.nickname || player.playerId }}
       </div>
+      <div v-if="player.general?.name" class="text-center text-sanguo-gold/80 text-xs mt-0.5">
+        {{ player.general.name }}
+      </div>
+      <div v-if="player.general?.name" class="text-center text-sanguo-gold/80 text-xs mt-0.5">
+        {{ player.general.name }}
+      </div>
+      <div v-if="player?.general?.name" class="text-center text-sanguo-gold/80 text-xs truncate">
+        {{ player.general.name }}
+      </div>
       <div class="flex justify-center items-center gap-2 mt-1">
         <span class="text-red-400 font-bold">{{ player.hp ?? 4 }}</span>
         <span class="text-slate-500">/</span>

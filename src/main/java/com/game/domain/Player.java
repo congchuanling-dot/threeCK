@@ -24,6 +24,8 @@ public class Player {
     private final List<Card> handCards = new CopyOnWriteArrayList<>();
     /** 是否已阵亡/离开 */
     private boolean alive = true;
+    /** 武将 ID，开局时分配 */
+    private volatile String generalId;
 
     public Player(String playerId, String nickname, int seatIndex, int maxHp) {
         this.playerId = Objects.requireNonNull(playerId, "playerId must not be null");
@@ -100,5 +102,13 @@ public class Player {
 
     public void setAlive(boolean alive) {
         this.alive = alive;
+    }
+
+    public String getGeneralId() {
+        return generalId;
+    }
+
+    public void setGeneralId(String generalId) {
+        this.generalId = generalId;
     }
 }

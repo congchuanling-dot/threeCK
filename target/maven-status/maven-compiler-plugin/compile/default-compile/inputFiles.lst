@@ -1,3 +1,5 @@
+C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\domain\General.java
+C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\domain\Skill.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\event\PhaseChangeEvent.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\event\GameEventConfig.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\service\BotService.java
@@ -14,8 +16,10 @@ C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\event\Defau
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\event\GameEvent.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\service\RoomService.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\domain\PendingKill.java
+C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\skill\GeneralRegistry.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\ThreeKingdomsGameApplication.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\websocket\WebSocketConfig.java
+C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\skill\SkillEffectLib.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\engine\GameContext.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\controller\GameController.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\domain\Suit.java
@@ -23,5 +27,6 @@ C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\event\Playe
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\websocket\WebSocketSessionStore.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\event\GameEventPublisher.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\engine\GameStateMachine.java
+C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\skill\skills\LongdanSkill.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\domain\Player.java
 C:\Users\从传领\Desktop\beliveOnly\threeCK\src\main\java\com\game\event\PlayerDamageEvent.java

@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-sanguo-dark flex flex-col">
+  <div class="h-screen overflow-hidden bg-sanguo-dark flex flex-col">
     <!-- 顶部标题 -->
     <header class="flex-shrink-0 py-3 px-4 border-b border-sanguo-gold/30">
       <h1 class="text-xl font-bold text-sanguo-gold text-center">AI 三国杀</h1>
@@ -38,7 +38,7 @@
           <button
             v-if="game.connected"
             class="px-4 py-2 rounded-lg bg-amber-800/30 border border-amber-500/50 text-amber-200 hover:bg-amber-700/40 transition-colors"
-            @click="startGame"
+            @click="generalSelectVisible = true"
           >
             开始游戏
           </button>
@@ -46,59 +46,61 @@
       </div>
     </section>
 
-    <!-- 战局主界面 - 三国杀风格 -->
-    <section v-else class="flex-1 flex flex-col min-h-0">
-      <div class="flex-1 grid grid-cols-[260px_1fr] gap-3 p-3 min-h-0">
-        <!-- 左侧：战局记录（固定高度可滚动，不撑大页面） -->
-        <aside class="min-h-0 flex flex-col overflow-hidden max-h-full">
+    <!-- 战局主界面 - 三国杀风格（大改布局） -->
+    <section v-else class="flex-1 flex flex-col min-h-0 overflow-hidden">
+      <div class="flex-1 grid grid-cols-[200px_1fr] gap-4 p-4 min-h-0 overflow-hidden">
+        <!-- 左侧：战局记录 -->
+        <aside class="flex flex-col min-h-0 overflow-hidden">
           <GameLog :log="game.gameLog" />
         </aside>
 
-        <!-- 主战场：上方对手 + 中央牌堆 + 下方自己 -->
-        <main class="flex-1 flex flex-col min-h-0 gap-3">
-          <!-- 上方：对手武将框 -->
-          <div class="flex justify-center gap-4 py-2">
-            <div
-              v-for="p in opponents"
-              :key="p.playerId"
-              :data-player-id="p.playerId"
-              class="inline-block"
-            >
-              <PlayerEntity
-                :player="p"
-                :is-current-turn="currentSeatIndex === p.seatIndex"
-                :selectable="targetSelectable && isTargetValid(p)"
-                :selected="selectedTargetId === p.playerId"
-                @select="onSelectTarget"
-              />
-            </div>
-          </div>
-
-          <!-- 中央：出牌区/牌堆 -->
-          <div class="flex-1 min-h-[80px] rounded-xl border-2 border-dashed border-amber-700/40 bg-amber-950/20 flex items-center justify-center">
-            <BattleArea :cards="battleCardsList" />
-          </div>
-
-          <!-- 下方：自己的武将框 + 手牌区 -->
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center gap-4 justify-center">
-              <div v-if="mePlayer" :data-player-id="mePlayer.playerId" class="inline-block">
+        <!-- 主战场：只有左侧战局记录有滚动条 -->
+        <main class="flex flex-col min-h-0 overflow-hidden">
+          <!-- 上方：对手 + 出牌区（保证最小高度，中央出牌区不被挤没） -->
+          <div class="flex-1 min-h-[220px] flex flex-col gap-3 overflow-hidden">
+            <div class="flex-shrink-0 flex justify-center gap-3 flex-wrap">
+              <div
+                v-for="p in opponents"
+                :key="p.playerId"
+                :data-player-id="p.playerId"
+              >
                 <PlayerEntity
-                  :player="mePlayer"
-                  :is-current-turn="currentSeatIndex === mePlayer.seatIndex"
-                  :selectable="targetSelectable && isTargetValid(mePlayer)"
-                  :selected="selectedTargetId === mePlayer.playerId"
+                  :player="p"
+                  :is-current-turn="currentSeatIndex === p.seatIndex"
+                  :selectable="targetSelectable && isTargetValid(p)"
+                  :selected="selectedTargetId === p.playerId"
                   @select="onSelectTarget"
                 />
               </div>
             </div>
-            <div class="flex flex-col gap-2 rounded-xl border-2 border-amber-700/50 bg-amber-950/30 p-4 shadow-inner">
+            <!-- 中央：出牌区（固定高度 120px，无滚动） -->
+            <div class="flex-shrink-0 h-[120px] rounded-xl border-2 border-amber-700/40 bg-amber-950/30 flex items-center justify-center p-3">
+              <BattleArea :cards="battleCardsList" />
+            </div>
+          </div>
+
+          <!-- 下方：自己 + 手牌 + 操作按钮（始终贴底可见） -->
+          <div class="flex-shrink-0 flex flex-col gap-3 mt-2">
+            <!-- 自己武将 -->
+            <div v-if="mePlayer" class="flex justify-center">
+              <PlayerEntity
+                :data-player-id="mePlayer.playerId"
+                :player="mePlayer"
+                :is-current-turn="currentSeatIndex === mePlayer.seatIndex"
+                :selectable="targetSelectable && isTargetValid(mePlayer)"
+                :selected="selectedTargetId === mePlayer.playerId"
+                @select="onSelectTarget"
+              />
+            </div>
+
+            <!-- 手牌区 + 操作 -->
+            <div class="rounded-xl border-2 border-amber-700/50 bg-amber-950/40 p-4">
               <!-- 被杀响应提示：更醒目，带脉动动画 -->
               <div
                 v-if="isRespondMode"
                 class="mb-2 px-4 py-3 rounded-lg bg-red-900/60 border-2 border-red-500 text-red-100 text-base font-medium animate-pulse"
               >
-                ⚔️ {{ game.pendingKill?.value?.sourceName ?? '对方' }} 对你出杀！请选择：出闪抵消 或 点击「承受伤害」
+                ⚔️ {{ game.pendingKill?.value?.sourceName ?? '对方' }} 对你出杀！请选择：出闪抵消、使用「龙胆」将杀当闪、或点击「承受伤害」
               </div>
               <!-- 濒死轮询提示 -->
               <div
@@ -116,7 +118,7 @@
               />
               <div class="flex justify-between items-center gap-3 flex-wrap">
                 <span v-if="selectedCard" class="text-amber-300 text-sm">
-                  {{ isRespondMode ? '已选闪，点击出牌抵消' : `已选: ${selectedCard.rankOrName || selectedCard.type || '?'}` }}
+                  {{ isRespondMode && longdanMode && (selectedCard.rankOrName || selectedCard.type) === '杀' ? '已选杀，龙胆当闪，点击出牌' : isRespondMode && !longdanMode ? '已选闪，点击出牌抵消' : `已选: ${selectedCard.rankOrName || selectedCard.type || '?'}` }}
                   <span v-if="!isRespondMode && needsTarget && !selectedTargetId" class="text-amber-500">→ 请点击目标</span>
                   <span v-if="!isRespondMode && (selectedCard.rankOrName || selectedCard.type) === '杀' && selectedTargetId" class="text-red-400 font-medium">
                     → 对 {{ targetPlayerName }} 出杀
@@ -129,6 +131,14 @@
                     @click="confirmPlay"
                   >
                     {{ playButtonText }}
+                  </button>
+                  <button
+                    v-if="isRespondMode && canUseLongdan"
+                    class="px-4 py-2 rounded-lg border-2 border-sanguo-gold/70 text-sanguo-gold hover:bg-sanguo-gold/20 transition-colors font-medium"
+                    :class="{ 'ring-2 ring-sanguo-gold': longdanMode }"
+                    @click="longdanMode = !longdanMode"
+                  >
+                    {{ longdanMode ? '龙胆已选 ✓' : '龙胆（杀当闪）' }}
                   </button>
                   <button
                     v-if="isRespondMode"
@@ -177,11 +187,18 @@
       :general="previewGeneral"
       @close="generalPreviewVisible = false"
     />
+
+    <!-- 选将框：开始游戏前选择武将 -->
+    <GeneralSelectModal
+      :visible="generalSelectVisible"
+      @confirm="onGeneralSelected"
+      @close="generalSelectVisible = false"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import LobbySection from './components/LobbySection.vue'
 import GameLog from './components/GameLog.vue'
 import BattleArea from './components/BattleArea.vue'
@@ -189,14 +206,21 @@ import HandArea from './components/HandArea.vue'
 import PlayerEntity from './components/PlayerEntity.vue'
 import KillArrowOverlay from './components/KillArrowOverlay.vue'
 import GeneralPreviewModal from './components/GeneralPreviewModal.vue'
+import GeneralSelectModal from './components/GeneralSelectModal.vue'
 import { useGameSocket } from './composables/useGameSocket.js'
 
 const game = useGameSocket()
 const generalPreviewVisible = ref(false)
 const previewGeneral = ref(null)
+/** 选将框可见性 */
+const generalSelectVisible = ref(false)
+/** 点击开始游戏但尚无房间时，创建房间后自动打开选将框 */
+const pendingStartAfterRoom = ref(false)
 const botCount = ref(1)  // 机器人数量 1-7
 const selectedCardId = ref(null)
 const selectedTargetId = ref(null)
+/** 龙胆技能模式：发动龙胆时，可将杀当闪使用 */
+const longdanMode = ref(false)
 
 // 有房间且已经拿到手牌时，进入战局界面
 const inBattle = computed(() => !!game.roomId && game.myHandCards.value.length > 0)
@@ -252,6 +276,17 @@ const mePlayer = computed(() =>
   playersWithHandCount.value.find((p) => p.playerId === game.myPlayerId.value)
 )
 
+/** 是否拥有龙胆技能（赵云） */
+const hasLongdanSkill = computed(() =>
+  mePlayer.value?.general?.skills?.some((s) => s.id === 'longdan') ?? false
+)
+/** 手牌中是否有杀 */
+const hasShaInHand = computed(() =>
+  handCardsList.value.some((c) => (c.rankOrName || c.type) === '杀')
+)
+/** 能否使用龙胆（有技能且手牌有杀） */
+const canUseLongdan = computed(() => hasLongdanSkill.value && hasShaInHand.value)
+
 const selectedCard = computed(() =>
   handCardsList.value.find((c) => c.id === selectedCardId.value) ?? null
 )
@@ -264,7 +299,9 @@ const needsTarget = computed(() => {
 })
 const canConfirmPlay = computed(() => {
   if (isRespondMode.value) {
-    return !!selectedCard.value && (selectedCard.value?.rankOrName || selectedCard.value?.type) === '闪'
+    const t = selectedCard.value?.rankOrName || selectedCard.value?.type
+    if (longdanMode.value && t === '杀') return true
+    return !!selectedCard.value && t === '闪'
   }
   if (!selectedCard.value || !isMyTurn.value) return false
   const t = selectedCard.value?.rankOrName || selectedCard.value?.type
@@ -285,7 +322,10 @@ const targetPlayerName = computed(() => {
 })
 
 const playButtonText = computed(() => {
-  if (isRespondMode.value) return '出闪抵消'
+  if (isRespondMode.value) {
+    if (longdanMode.value && (selectedCard.value?.rankOrName || selectedCard.value?.type) === '杀') return '龙胆：杀当闪'
+    return '出闪抵消'
+  }
   const t = selectedCard.value?.rankOrName || selectedCard.value?.type
   if (t === '杀' && selectedTargetId.value && targetPlayerName.value) return `对 ${targetPlayerName.value} 出杀`
   return '出牌'
@@ -302,7 +342,9 @@ function isTargetValid(p) {
 function onSelectCard(card) {
   if (!card?.id) return
   if (isRespondMode.value) {
-    if ((card.rankOrName || card.type) !== '闪') return
+    const ct = card.rankOrName || card.type
+    if (longdanMode.value && ct === '杀') { /* 龙胆模式可选杀 */ }
+    else if (ct !== '闪') return
   } else if (isDyingMode.value) {
     if ((card.rankOrName || card.type) !== '桃') return
   } else if (!canPlayCard.value || (card.rankOrName || card.type) === '闪') return
@@ -339,7 +381,9 @@ function createRoom() {
   game.createRoom('AI 三国杀房间', '玩家1', botCount.value)
 }
 
-async function startGame() {
+/** 选将框确认后，以所选武将开始游戏 */
+async function onGeneralSelected(generalId) {
+  generalSelectVisible.value = false
   const rid = game.roomId.value
   const pid = game.myPlayerId.value
   if (!rid || !pid) return
@@ -347,7 +391,7 @@ async function startGame() {
     const res = await fetch(`/api/game/${rid}/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: pid }),
+      body: JSON.stringify({ playerId: pid, generalId }),
     })
     const data = await res.json()
     if (data?.ok) {
@@ -375,16 +419,21 @@ async function playCard(card) {
       ? game.players.value.find((p) => p.playerId !== pid && (p.hp ?? 4) > 0)?.playerId
       : pid)
   }
+  const useLongdan = isRespondMode.value && longdanMode.value && (cardType === '杀')
   try {
+    const body = { playerId: pid, cardId: card.id, targetId }
+    if (useLongdan) body.skillId = 'longdan'
     const res = await fetch(`/api/game/${rid}/play`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: pid, cardId: card.id, targetId }),
+      body: JSON.stringify(body),
     })
     const data = await res.json()
     if (data?.ok) {
       game.applyGameState(data)
       selectedCardId.value = null
+      selectedTargetId.value = null
+      longdanMode.value = false
     } else if (data?.message) {
       game.addLog('系统', data.message)
     }
@@ -501,6 +550,10 @@ function onGeneralGenerated(general) {
   previewGeneral.value = general
   generalPreviewVisible.value = true
 }
+
+watch(isRespondMode, (val) => {
+  if (!val) longdanMode.value = false
+})
 
 onMounted(() => {
   game.connect()

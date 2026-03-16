@@ -2,6 +2,7 @@ package com.game.websocket;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.game.domain.Card;
+import com.game.skill.GeneralRegistry;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -102,6 +103,8 @@ public class GameContextDTO {
         private boolean alive;
         /** 该玩家当前手牌（MVP 阶段直接下发，方便前端展示和出牌） */
         private List<Card> hand;
+        /** 武将信息 { id, name, skills: [{ id, name, description }] }，便于前端展示与技能交互 */
+        private GeneralSnapshot general;
 
         public static PlayerSnapshot from(com.game.domain.Player p) {
             PlayerSnapshot s = new PlayerSnapshot();
@@ -113,8 +116,16 @@ public class GameContextDTO {
             s.setHandCount(p.getHandCards().size());
             s.setAlive(p.isAlive());
             s.setHand(new ArrayList<>(p.getHandCards()));
+            if (p.getGeneralId() != null) {
+                GeneralRegistry.get(p.getGeneralId()).ifPresent(g -> {
+                    s.setGeneral(GeneralSnapshot.from(g));
+                });
+            }
             return s;
         }
+
+        public GeneralSnapshot getGeneral() { return general; }
+        public void setGeneral(GeneralSnapshot general) { this.general = general; }
 
         public String getPlayerId() { return playerId; }
         public void setPlayerId(String playerId) { this.playerId = playerId; }
@@ -132,5 +143,50 @@ public class GameContextDTO {
         public void setAlive(boolean alive) { this.alive = alive; }
         public List<Card> getHand() { return hand; }
         public void setHand(List<Card> hand) { this.hand = hand; }
+    }
+
+    /** 武将快照，便于前端展示与技能交互，可扩展以支持 AI 生成武将 */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class GeneralSnapshot {
+        private String id;
+        private String name;
+        private List<SkillSnapshot> skills;
+
+        public static GeneralSnapshot from(com.game.domain.General g) {
+            GeneralSnapshot s = new GeneralSnapshot();
+            s.setId(g.getId());
+            s.setName(g.getName());
+            s.setSkills(g.getSkills().stream().map(SkillSnapshot::from).toList());
+            return s;
+        }
+
+        public String getId() { return id; }
+        public void setId(String id) { this.id = id; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public List<SkillSnapshot> getSkills() { return skills; }
+        public void setSkills(List<SkillSnapshot> skills) { this.skills = skills; }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class SkillSnapshot {
+        private String id;
+        private String name;
+        private String description;
+
+        public static SkillSnapshot from(com.game.domain.Skill s) {
+            SkillSnapshot snap = new SkillSnapshot();
+            snap.setId(s.getId());
+            snap.setName(s.getName());
+            snap.setDescription(s.getDescription());
+            return snap;
+        }
+
+        public String getId() { return id; }
+        public void setId(String id) { this.id = id; }
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getDescription() { return description; }
+        public void setDescription(String description) { this.description = description; }
     }
 }

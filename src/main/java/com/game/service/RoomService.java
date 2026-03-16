@@ -107,9 +107,10 @@ public class RoomService {
      * 开局：仅房主可触发。创建上下文与状态机，初始化牌堆并发 4 张，设为 DRAW 后执行摸 2 张并进入 PLAY。
      *
      * @param requestingPlayerId 请求开局的玩家 ID，必须为房主
+     * @param ownerGeneralId    房主选择的武将 ID，null 时默认 zhaoyun
      * @return 成功时返回开局结果（含上下文与当前玩家本轮摸到的 2 张牌，用于推送）
      */
-    public Optional<StartResult> startGame(String roomId, String requestingPlayerId, GameStarter starter) {
+    public Optional<StartResult> startGame(String roomId, String requestingPlayerId, GameStarter starter, String ownerGeneralId) {
         GameRoom room = rooms.get(roomId);
         if (room == null || room.getStatus() != GameRoom.RoomStatus.WAITING) {
             return Optional.empty();
@@ -122,6 +123,7 @@ public class RoomService {
         }
         room.setStatus(GameRoom.RoomStatus.IN_GAME);
         GameContext ctx = new GameContext(room);
+        ctx.setAttribute("ownerGeneralId", ownerGeneralId != null ? ownerGeneralId : "zhaoyun");
         GameStateMachine sm = new GameStateMachine(ctx);
         if (starter != null) {
             starter.initialize(ctx, sm);
