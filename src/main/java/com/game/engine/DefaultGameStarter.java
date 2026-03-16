@@ -61,6 +61,8 @@ public class DefaultGameStarter implements RoomService.GameStarter {
         context.setCurrentPhase(Phase.DRAW);
         context.setDrawnThisTurn(false);
         context.setAttribute("shaCountThisTurn", 0);
+        context.setAttribute("jiuUsedThisTurn", 0);
+        context.setAttribute("jiuBuff", false);
 
         stateMachine.setOnTransition(transition -> {
             if (eventPublisher != null) {

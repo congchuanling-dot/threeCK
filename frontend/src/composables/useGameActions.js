@@ -3,7 +3,7 @@
  */
 import { ref } from 'vue'
 import { gameApi } from '../api/gameApi.js'
-import { getCardType, isSha, isTao } from '../constants/cardTypes.js'
+import { getCardType, isSha, isTao, isJiu } from '../constants/cardTypes.js'
 
 /**
  * @param {import('./useGameSocket.js').UseGameSocket} game - useGameSocket 返回值
@@ -42,7 +42,7 @@ export function useGameActions(game) {
     const cardType = getCardType(card)
     const finalTargetId = targetId ?? (isSha(cardType)
       ? game.players?.value?.find((p) => p.playerId !== pid && (p.hp ?? 4) > 0)?.playerId
-      : isTao(cardType) ? pid : null)
+      : isTao(cardType) || isJiu(cardType) ? pid : null)
     try {
       const body = { playerId: pid, cardId: card.id, targetId: finalTargetId }
       if (useLongdan) body.skillId = 'longdan'

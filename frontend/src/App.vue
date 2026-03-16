@@ -150,10 +150,10 @@
             <button
               v-if="isDyingMode"
               class="px-3 py-1.5 rounded bg-green-600 text-white text-sm disabled:opacity-40 hover:bg-green-500 active:scale-95 transition-all duration-200"
-              :disabled="!selectedCard || (selectedCard?.rankOrName || selectedCard?.type) !== '桃'"
+              :disabled="!selectedCard || ((selectedCard?.rankOrName || selectedCard?.type) !== '桃' && (selectedCard?.rankOrName || selectedCard?.type) !== '酒')"
               @click="respondDyingTao"
             >
-              出桃
+              出桃/酒
             </button>
             <button v-if="isDyingMode" class="px-3 py-1.5 rounded border border-orange-500 text-orange-300 text-sm hover:scale-105 active:scale-95 transition-all duration-200" @click="() => actions.respondDyingPass()">
               不出
@@ -196,7 +196,7 @@ import { useGameSocket } from './composables/useGameSocket.js'
 import { useGameActions } from './composables/useGameActions.js'
 import { useBattleCards } from './composables/useBattleCards.js'
 import { CARD_TYPES, TRICK_NEEDS_TARGET, cardNeedsTargetForPlay, isEquipment } from './constants/cardTypes.js'
-import { getCardType, isSha, isShan, isTao, normalizeCard as normalizeBattleCard } from './utils/cardUtils.js'
+import { getCardType, isSha, isShan, isTao, isTaoOrJiu, normalizeCard as normalizeBattleCard } from './utils/cardUtils.js'
 
 const game = useGameSocket()
 const actions = useGameActions(game)
@@ -266,10 +266,7 @@ const canConfirmPlay = computed(() => {
     const me = mePlayer.value
     return me && (me.hp ?? 4) < (me.maxHp ?? 4)
   }
-  if (t === '酒') {
-    const me = mePlayer.value
-    return me && (me.hp ?? 4) < (me.maxHp ?? 4)
-  }
+  if (t === '酒') return !!mePlayer.value // 酒可满血用于buff（下一张杀+1伤害），也可受伤时回血，无需选目标
   if (TRICK_NEEDS_TARGET.includes(t)) return !!selectedTargetId.value
   if (isEquipment(t)) return true
   return true
@@ -288,7 +285,8 @@ function isTargetValid(p) {
   if (!p || (p.hp ?? 4) <= 0) return false
   const t = selectedCard.value?.rankOrName || selectedCard.value?.type
   if (t === '杀') return p.playerId !== game.myPlayerId?.value
-  if (t === '桃' || t === '酒') return p.playerId === game.myPlayerId?.value && (p.hp ?? 4) < (p.maxHp ?? 4)
+  if (t === '桃') return p.playerId === game.myPlayerId?.value && (p.hp ?? 4) < (p.maxHp ?? 4)
+  if (t === '酒') return p.playerId === game.myPlayerId?.value // 酒对自己用，可满血（buff）或受伤（回血）
   if (TRICK_NEEDS_TARGET.includes(t)) return p.playerId !== game.myPlayerId?.value
   return false
 }
@@ -300,7 +298,8 @@ function onSelectCard(card) {
     if (!longdanMode.value && ct !== '闪') return
     if (longdanMode.value && ct !== '杀') return
   } else if (isDyingMode.value) {
-    if ((card.rankOrName || card.type) !== '桃') return
+    const ct2 = card.rankOrName || card.type
+    if (ct2 !== '桃' && ct2 !== '酒') return
   } else if (!canPlayCard.value) return
   else if ((card.rankOrName || card.type) === '闪') return
   selectedCardId.value = selectedCardId.value === card.id ? null : card.id
@@ -337,7 +336,8 @@ async function onGeneralSelected(generalId) {
 
 async function respondDyingTao() {
   const card = selectedCard.value
-  if (!card || !isTao(card)) return
+  const ct = card?.rankOrName || card?.type
+  if (!card || (ct !== '桃' && ct !== '酒')) return
   await actions.respondDyingTao(card.id)
   selectedCardId.value = null
 }

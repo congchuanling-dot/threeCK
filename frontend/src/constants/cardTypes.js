@@ -42,6 +42,19 @@ export function isTao(type) {
 }
 
 /**
+ * @param {string} type
+ * @returns {boolean}
+ */
+export function isJiu(type) {
+  return type === CARD_TYPES.JIU
+}
+
+/** 桃或酒（濒死时可当桃使用） */
+export function isTaoOrJiu(type) {
+  return isTao(type) || isJiu(type)
+}
+
+/**
  * 从牌对象中解析牌型（兼容 rankOrName / type 等字段）
  * @param {Object} card
  * @returns {string|null}

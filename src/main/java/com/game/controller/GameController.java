@@ -183,19 +183,20 @@ public class GameController {
                 eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
                 ctx.addPlayedCard(playerId, cardId, type, playerId, player.getNickname());
             } else if ("酒".equals(type)) {
-                var healTarget = ctx.getRoom().getPlayerById(targetId != null && !targetId.isBlank() ? targetId : playerId);
-                if (healTarget.isEmpty() || !healTarget.get().isAlive()) {
-                    return Map.<String, Object>of("ok", false, "message", "目标无效");
+                // 酒只能对自己使用；每回合只能出1次；出牌阶段仅用于 buff（下一张杀+1），回血仅在濒死时
+                if (targetId != null && !targetId.isBlank() && !targetId.equals(playerId)) {
+                    return Map.<String, Object>of("ok", false, "message", "酒只能对自己使用");
                 }
-                var t = healTarget.get();
-                if (t.getHp() >= t.getMaxHp()) {
-                    return Map.<String, Object>of("ok", false, "message", "目标满血时酒无效");
+                int jiuUsed = ctx.getAttribute("jiuUsedThisTurn").map(o -> ((Number) o).intValue()).orElse(0);
+                if (jiuUsed >= 1) {
+                    return Map.<String, Object>of("ok", false, "message", "本回合已使用过酒");
                 }
                 player.removeHandCard(card);
                 ctx.addToDiscardPile(card);
-                t.setHp(Math.min(t.getMaxHp(), t.getHp() + 1));
+                ctx.setAttribute("jiuUsedThisTurn", 1);
+                ctx.setAttribute("jiuBuff", true); // 下一张杀伤害+1
                 eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
-                ctx.addPlayedCard(playerId, cardId, type, t.getPlayerId(), t.getNickname());
+                ctx.addPlayedCard(playerId, cardId, type, playerId, player.getNickname());
             } else if (CardPlayService.isHandledByCardSystem(type)) {
                 if (CardPlayService.isEquipment(type)) {
                     targetId = playerId;
@@ -240,6 +241,10 @@ public class GameController {
             return Map.<String, Object>of("ok", false, "message", "目标无效");
         }
         var target = targetOpt.get();
+        int damageAmount = Boolean.TRUE.equals(ctx.getAttribute("jiuBuff").map(o -> (Boolean) o).orElse(false)) ? 2 : 1;
+        if (damageAmount == 2) {
+            ctx.setAttribute("jiuBuff", false); // 使用后清除
+        }
         player.removeHandCard(card);
         ctx.addToDiscardPile(card);
         eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card, target));
@@ -248,7 +253,7 @@ public class GameController {
                 Map.of("playerId", player.getPlayerId(), "cardId", card.getId(), "cardType", "杀",
                         "targetId", target.getPlayerId(), "targetName", target.getNickname())));
         ctx.setAttribute("shaCountThisTurn", shaCount + 1);
-        ctx.setPendingKill(target.getPlayerId(), player.getPlayerId(), player.getNickname(), target.getNickname(), 1);
+        ctx.setPendingKill(target.getPlayerId(), player.getPlayerId(), player.getNickname(), target.getNickname(), damageAmount);
         webSocketHandler.broadcastGameContext(roomId, ctx);
         if (BotService.isBot(target.getPlayerId())) {
             botService.respondToKill(roomId, ctx);
@@ -414,8 +419,9 @@ public class GameController {
                     return Map.<String, Object>of("ok", false, "message", "手牌中无此牌");
                 }
                 Card card = cardOpt.get();
-                if (!"桃".equals(card.getRankOrName())) {
-                    return Map.<String, Object>of("ok", false, "message", "只能出桃救人");
+                String cardType = card.getRankOrName();
+                if (!"桃".equals(cardType) && !"酒".equals(cardType)) {
+                    return Map.<String, Object>of("ok", false, "message", "只能出桃或酒救人");
                 }
                 player.removeHandCard(card);
                 ctx.addToDiscardPile(card);
@@ -425,7 +431,7 @@ public class GameController {
                 ctx.addPlayedCard(playerId, cardId, "桃", targetId, targetName);
                 ctx.clearPendingDeath();
                 webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
-                        Map.of("playerId", playerId, "cardId", cardId, "cardType", "桃",
+                        Map.of("playerId", playerId, "cardId", cardId, "cardType", card.getRankOrName(),
                                 "targetId", targetId, "targetName", targetName)));
                 webSocketHandler.broadcastGameContext(roomId, ctx);
                 var smOpt = roomService.getStateMachine(roomId);
@@ -483,6 +489,8 @@ public class GameController {
             GameStateMachine sm = smOpt.get();
             ctx.setCurrentSeatIndex(ctx.nextAliveSeatIndex());
             ctx.setAttribute("shaCountThisTurn", 0); // 新回合重置出杀次数
+            ctx.setAttribute("jiuUsedThisTurn", 0);  // 新回合重置酒使用次数
+            ctx.setAttribute("jiuBuff", false);     // 酒buff未使用则清除
             ctx.setCurrentPhase(Phase.DRAW);
             ctx.incrementRound();
             List<Card> drawn = sm.processDrawPhase(2);

@@ -130,19 +130,22 @@ public class BotService {
         Player asking = askingOpt.get();
         if (!isBot(asking.getPlayerId())) return;
 
-        var tao = asking.getHandCards().stream().filter(c -> "桃".equals(c.getRankOrName())).findFirst().orElse(null);
-        if (tao != null) {
-            asking.removeHandCard(tao);
-            ctx.addToDiscardPile(tao);
+        var saveCard = asking.getHandCards().stream()
+                .filter(c -> "桃".equals(c.getRankOrName()) || "酒".equals(c.getRankOrName()))
+                .findFirst().orElse(null);
+        if (saveCard != null) {
+            String cardType = saveCard.getRankOrName();
+            asking.removeHandCard(saveCard);
+            ctx.addToDiscardPile(saveCard);
             var targetOpt = ctx.getRoom().getPlayerById(targetId);
             targetOpt.ifPresent(t -> {
                 t.setHp(Math.min(t.getMaxHp(), t.getHp() + 1));
-                eventPublisher.publish(new PlayerPlayCardEvent(ctx, asking, tao));
+                eventPublisher.publish(new PlayerPlayCardEvent(ctx, asking, saveCard));
             });
-            ctx.addPlayedCard(asking.getPlayerId(), tao.getId(), "桃", targetId, (String) pending.get("targetName"));
+            ctx.addPlayedCard(asking.getPlayerId(), saveCard.getId(), cardType, targetId, (String) pending.get("targetName"));
             ctx.clearPendingDeath();
             webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
-                    Map.of("playerId", asking.getPlayerId(), "cardId", tao.getId(), "cardType", "桃",
+                    Map.of("playerId", asking.getPlayerId(), "cardId", saveCard.getId(), "cardType", cardType,
                             "targetId", targetId, "targetName", pending.get("targetName"))));
         } else {
             // 跳过，询问下一人
@@ -213,9 +216,19 @@ public class BotService {
             }
         }
 
-        // 1. 有「杀」则打第一个存活的非bot（每回合1次，诸葛连弩无限）
+        // 1. 有「杀」则打第一个存活的非bot（每回合1次，诸葛连弩无限）；出杀前可先用酒buff
         int shaCount = ctx.getAttribute("shaCountThisTurn").map(o -> ((Number) o).intValue()).orElse(0);
+        int jiuUsed = ctx.getAttribute("jiuUsedThisTurn").map(o -> ((Number) o).intValue()).orElse(0);
         boolean canPlaySha = shaCount < 1 || com.game.card.adapter.PlayerCardTargetAdapter.hasZhuGeLianNu(bot.getPlayerId());
+        Card jiu = hand.stream().filter(c -> "酒".equals(c.getRankOrName())).findFirst().orElse(null);
+        if (jiu != null && jiuUsed < 1) {
+            Card sha = hand.stream().filter(c -> "杀".equals(c.getRankOrName())).findFirst().orElse(null);
+            if (sha != null && humanTarget.isPresent() && canPlaySha) {
+                botDelay();
+                doPlayCard(roomId, ctx, bot, jiu, bot.getPlayerId());
+                webSocketHandler.broadcastGameContext(roomId, ctx);
+            }
+        }
         Card sha = hand.stream().filter(c -> "杀".equals(c.getRankOrName())).findFirst().orElse(null);
         if (sha != null && humanTarget.isPresent() && canPlaySha) {
             botDelay();
@@ -271,22 +284,26 @@ public class BotService {
                 var target = targetOpt.get();
                 int shaCount = ctx.getAttribute("shaCountThisTurn").map(o -> ((Number) o).intValue()).orElse(0);
                 ctx.setAttribute("shaCountThisTurn", shaCount + 1);
+                int damageAmount = Boolean.TRUE.equals(ctx.getAttribute("jiuBuff").map(o -> (Boolean) o).orElse(false)) ? 2 : 1;
+                if (damageAmount == 2) {
+                    ctx.setAttribute("jiuBuff", false);
+                }
                 ctx.addPlayedCard(player.getPlayerId(), card.getId(), "杀", target.getPlayerId(), target.getNickname());
                 eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card, target));
                 webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
                         Map.of("playerId", player.getPlayerId(), "cardId", card.getId(), "cardType", "杀",
                                 "targetId", target.getPlayerId(), "targetName", target.getNickname())));
                 if (isBot(target.getPlayerId())) {
-                    eventPublisher.publish(new PlayerDamageEvent(ctx, target, player, 1));
+                    eventPublisher.publish(new PlayerDamageEvent(ctx, target, player, damageAmount));
                     webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("DAMAGE",
                             Map.of("targetId", target.getPlayerId(), "targetName", target.getNickname(),
-                                    "sourceId", player.getPlayerId(), "sourceName", player.getNickname(), "amount", 1)));
+                                    "sourceId", player.getPlayerId(), "sourceName", player.getNickname(), "amount", damageAmount)));
                     if (ctx.getPendingDeath().isPresent()) {
                         webSocketHandler.broadcastGameContext(roomId, ctx);
                         runDyingPoll(roomId, ctx);
                     }
                 } else {
-                    ctx.setPendingKill(target.getPlayerId(), player.getPlayerId(), player.getNickname(), target.getNickname(), 1);
+                    ctx.setPendingKill(target.getPlayerId(), player.getPlayerId(), player.getNickname(), target.getNickname(), damageAmount);
                     return true;
                 }
             }
@@ -299,6 +316,11 @@ public class BotService {
                     eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
                 }
             });
+        } else if ("酒".equals(type)) {
+            ctx.setAttribute("jiuUsedThisTurn", 1);
+            ctx.setAttribute("jiuBuff", true);
+            eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
+            ctx.addPlayedCard(player.getPlayerId(), card.getId(), type, player.getPlayerId(), player.getNickname());
         } else {
             eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
             ctx.addPlayedCard(player.getPlayerId(), card.getId(), type, null, null);
@@ -311,6 +333,8 @@ public class BotService {
     private void endBotRound(String roomId, GameContext ctx, GameStateMachine sm) {
         ctx.setCurrentSeatIndex(ctx.nextAliveSeatIndex());
         ctx.setAttribute("shaCountThisTurn", 0); // 新回合重置出杀次数
+        ctx.setAttribute("jiuUsedThisTurn", 0);
+        ctx.setAttribute("jiuBuff", false);
         ctx.setCurrentPhase(com.game.domain.Phase.DRAW);
         ctx.incrementRound();
         sm.processDrawPhase(2);

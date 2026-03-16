@@ -32,6 +32,15 @@ export function isTao(card) {
   return isCardType(card, CARD_TYPES.TAO)
 }
 
+export function isJiu(card) {
+  return isCardType(card, CARD_TYPES.JIU)
+}
+
+/** 桃或酒（均可用于濒死救人） */
+export function isTaoOrJiu(card) {
+  return isTao(card) || isJiu(card)
+}
+
 /**
  * 规范化牌对象（兼容多种后端格式）
  */
