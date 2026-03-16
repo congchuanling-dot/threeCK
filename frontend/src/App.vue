@@ -11,35 +11,46 @@
     <!-- 大厅：未进入战局时显示 -->
     <section v-if="!inBattle" class="flex-1 flex flex-col items-center justify-center p-6 gap-6">
       <LobbySection @generated="onGeneralGenerated" />
-      <div class="flex flex-wrap gap-3 justify-center">
-        <button
-          class="px-4 py-2 rounded-lg border border-sanguo-gold/50 text-sanguo-gold hover:bg-sanguo-gold/10 transition-colors"
-          @click="connect"
-        >
-          {{ game.connected ? '已连接' : '连接服务器' }}
-        </button>
-        <button
-          v-if="game.connected"
-          class="px-4 py-2 rounded-lg bg-sanguo-gold/20 border border-sanguo-gold/50 text-sanguo-gold hover:bg-sanguo-gold/30 transition-colors"
-          @click="createRoom"
-        >
-          创建房间
-        </button>
-        <button
-          v-if="game.connected"
-          class="px-4 py-2 rounded-lg bg-amber-800/30 border border-amber-500/50 text-amber-200 hover:bg-amber-700/40 transition-colors"
-          @click="startGame"
-        >
-          开始游戏
-        </button>
+      <div class="flex flex-col gap-4 items-center">
+        <div v-if="game.connected" class="flex items-center gap-3">
+          <label class="text-amber-200 text-sm">机器人数量：</label>
+          <select
+            v-model.number="botCount"
+            class="px-3 py-2 rounded-lg bg-amber-950/50 border border-amber-500/50 text-amber-200 text-sm"
+          >
+            <option v-for="n in 7" :key="n" :value="n">{{ n }} 个</option>
+          </select>
+        </div>
+        <div class="flex flex-wrap gap-3 justify-center">
+          <button
+            class="px-4 py-2 rounded-lg border border-sanguo-gold/50 text-sanguo-gold hover:bg-sanguo-gold/10 transition-colors"
+            @click="connect"
+          >
+            {{ game.connected ? '已连接' : '连接服务器' }}
+          </button>
+          <button
+            v-if="game.connected"
+            class="px-4 py-2 rounded-lg bg-sanguo-gold/20 border border-sanguo-gold/50 text-sanguo-gold hover:bg-sanguo-gold/30 transition-colors"
+            @click="createRoom"
+          >
+            创建房间
+          </button>
+          <button
+            v-if="game.connected"
+            class="px-4 py-2 rounded-lg bg-amber-800/30 border border-amber-500/50 text-amber-200 hover:bg-amber-700/40 transition-colors"
+            @click="startGame"
+          >
+            开始游戏
+          </button>
+        </div>
       </div>
     </section>
 
     <!-- 战局主界面 - 三国杀风格 -->
     <section v-else class="flex-1 flex flex-col min-h-0">
       <div class="flex-1 grid grid-cols-[260px_1fr] gap-3 p-3 min-h-0">
-        <!-- 左侧：战局记录 -->
-        <aside class="min-h-0 flex flex-col">
+        <!-- 左侧：战局记录（固定高度可滚动，不撑大页面） -->
+        <aside class="min-h-0 flex flex-col overflow-hidden max-h-full">
           <GameLog :log="game.gameLog" />
         </aside>
 
@@ -47,15 +58,20 @@
         <main class="flex-1 flex flex-col min-h-0 gap-3">
           <!-- 上方：对手武将框 -->
           <div class="flex justify-center gap-4 py-2">
-            <PlayerEntity
+            <div
               v-for="p in opponents"
               :key="p.playerId"
-              :player="p"
-              :is-current-turn="currentSeatIndex === p.seatIndex"
-              :selectable="targetSelectable && isTargetValid(p)"
-              :selected="selectedTargetId === p.playerId"
-              @select="onSelectTarget"
-            />
+              :data-player-id="p.playerId"
+              class="inline-block"
+            >
+              <PlayerEntity
+                :player="p"
+                :is-current-turn="currentSeatIndex === p.seatIndex"
+                :selectable="targetSelectable && isTargetValid(p)"
+                :selected="selectedTargetId === p.playerId"
+                @select="onSelectTarget"
+              />
+            </div>
           </div>
 
           <!-- 中央：出牌区/牌堆 -->
@@ -66,26 +82,34 @@
           <!-- 下方：自己的武将框 + 手牌区 -->
           <div class="flex flex-col gap-2">
             <div class="flex items-center gap-4 justify-center">
-              <PlayerEntity
-                v-if="mePlayer"
-                :player="mePlayer"
-                :is-current-turn="currentSeatIndex === mePlayer.seatIndex"
-                :selectable="targetSelectable && isTargetValid(mePlayer)"
-                :selected="selectedTargetId === mePlayer.playerId"
-                @select="onSelectTarget"
-              />
+              <div v-if="mePlayer" :data-player-id="mePlayer.playerId" class="inline-block">
+                <PlayerEntity
+                  :player="mePlayer"
+                  :is-current-turn="currentSeatIndex === mePlayer.seatIndex"
+                  :selectable="targetSelectable && isTargetValid(mePlayer)"
+                  :selected="selectedTargetId === mePlayer.playerId"
+                  @select="onSelectTarget"
+                />
+              </div>
             </div>
             <div class="flex flex-col gap-2 rounded-xl border-2 border-amber-700/50 bg-amber-950/30 p-4 shadow-inner">
-              <!-- 被杀响应提示 -->
+              <!-- 被杀响应提示：更醒目，带脉动动画 -->
               <div
                 v-if="isRespondMode"
-                class="mb-2 px-3 py-2 rounded-lg bg-red-900/40 border border-red-500/50 text-red-200 text-sm"
+                class="mb-2 px-4 py-3 rounded-lg bg-red-900/60 border-2 border-red-500 text-red-100 text-base font-medium animate-pulse"
               >
-                {{ game.pendingKill?.value?.sourceName ?? '对方' }} 对你出杀！请出闪抵消或承受伤害
+                ⚔️ {{ game.pendingKill?.value?.sourceName ?? '对方' }} 对你出杀！请选择：出闪抵消 或 点击「承受伤害」
+              </div>
+              <!-- 濒死轮询提示 -->
+              <div
+                v-if="isDyingMode"
+                class="mb-2 px-3 py-2 rounded-lg bg-orange-900/50 border border-orange-500/50 text-orange-200 text-sm"
+              >
+                {{ dyingTargetName }} 濒死！是否出桃救援？（可自救）
               </div>
               <HandArea
                 :cards="handCardsList"
-                :can-play="canPlayCard || isRespondMode"
+                :can-play="canPlayCard || isRespondMode || isDyingMode"
                 :current-phase="phaseStr"
                 :selected-id="selectedCardId"
                 @select="onSelectCard"
@@ -108,14 +132,30 @@
                   </button>
                   <button
                     v-if="isRespondMode"
-                    class="px-4 py-2 rounded-lg border-2 border-red-500/60 text-red-300 hover:bg-red-500/20 transition-colors text-sm"
+                    class="px-4 py-2 rounded-lg border-2 border-red-500 text-red-200 hover:bg-red-500/30 transition-colors font-medium"
+                    :disabled="acceptDamageLoading"
                     @click="acceptDamage"
                   >
-                    承受伤害
+                    {{ acceptDamageLoading ? '处理中...' : '承受伤害' }}
+                  </button>
+                  <button
+                    v-if="isDyingMode"
+                    class="px-4 py-2 rounded-lg bg-green-600/80 hover:bg-green-500 text-white font-medium text-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    :disabled="!selectedCard || (selectedCard?.rankOrName || selectedCard?.type) !== '桃'"
+                    @click="respondDyingTao"
+                  >
+                    出桃救人
+                  </button>
+                  <button
+                    v-if="isDyingMode"
+                    class="px-4 py-2 rounded-lg border-2 border-orange-500/60 text-orange-300 hover:bg-orange-500/20 transition-colors text-sm"
+                    @click="respondDyingPass"
+                  >
+                    不出
                   </button>
                   <button
                     class="px-4 py-2 rounded-lg border-2 border-amber-500/60 text-amber-300 hover:bg-amber-500/20 transition-colors text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-                    :disabled="!isMyTurn || isRespondMode || endRoundLoading"
+                    :disabled="!isMyTurn || isRespondMode || isDyingMode || endRoundLoading"
                     @click="endRound"
                   >
                     {{ endRoundLoading ? '处理中...' : '结束回合' }}
@@ -127,6 +167,9 @@
         </main>
       </div>
     </section>
+
+    <!-- 出杀箭头动画（从出牌者指向目标） -->
+    <KillArrowOverlay v-if="inBattle" :kill-arrow="game.killArrow?.value ?? game.killArrow ?? null" />
 
     <!-- 武将卡片预览弹窗 -->
     <GeneralPreviewModal
@@ -144,12 +187,14 @@ import GameLog from './components/GameLog.vue'
 import BattleArea from './components/BattleArea.vue'
 import HandArea from './components/HandArea.vue'
 import PlayerEntity from './components/PlayerEntity.vue'
+import KillArrowOverlay from './components/KillArrowOverlay.vue'
 import GeneralPreviewModal from './components/GeneralPreviewModal.vue'
 import { useGameSocket } from './composables/useGameSocket.js'
 
 const game = useGameSocket()
 const generalPreviewVisible = ref(false)
 const previewGeneral = ref(null)
+const botCount = ref(1)  // 机器人数量 1-7
 const selectedCardId = ref(null)
 const selectedTargetId = ref(null)
 
@@ -160,6 +205,19 @@ const canPlayCard = computed(() => game.currentPhase.value === 'PLAY')
 const isRespondMode = computed(() => {
   const pk = game.pendingKill.value
   return pk && pk.targetId === game.myPlayerId.value
+})
+
+const isDyingMode = computed(() => {
+  const pd = game.pendingDeath?.value ?? game.pendingDeath
+  if (!pd) return false
+  const askingSeat = pd.askingSeatIndex
+  const me = game.players.value?.find((p) => p.playerId === game.myPlayerId.value)
+  return me != null && me.seatIndex === askingSeat
+})
+
+const dyingTargetName = computed(() => {
+  const pd = game.pendingDeath?.value ?? game.pendingDeath
+  return pd?.targetName ?? pd?.targetId ?? '濒死玩家'
 })
 
 const handCardsList = computed(() =>
@@ -245,6 +303,8 @@ function onSelectCard(card) {
   if (!card?.id) return
   if (isRespondMode.value) {
     if ((card.rankOrName || card.type) !== '闪') return
+  } else if (isDyingMode.value) {
+    if ((card.rankOrName || card.type) !== '桃') return
   } else if (!canPlayCard.value || (card.rankOrName || card.type) === '闪') return
   if (selectedCardId.value === card.id) {
     selectedCardId.value = null
@@ -276,7 +336,7 @@ function connect() {
 
 function createRoom() {
   if (!game.connected.value) return
-  game.createRoom('AI 三国杀房间', 4, '玩家1')
+  game.createRoom('AI 三国杀房间', '玩家1', botCount.value)
 }
 
 async function startGame() {
@@ -333,11 +393,61 @@ async function playCard(card) {
   }
 }
 
+/** 濒死轮询：出桃救人 */
+async function respondDyingTao() {
+  const rid = game.roomId.value
+  const pid = game.myPlayerId.value
+  const card = selectedCard.value
+  if (!rid || !pid || !isDyingMode.value || !card || (card.rankOrName || card.type) !== '桃') return
+  try {
+    const res = await fetch(`/api/game/${rid}/respondDying`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: pid, action: 'USE_TAO', cardId: card.id }),
+    })
+    const data = await res.json()
+    if (data?.ok) {
+      game.applyGameState(data)
+      selectedCardId.value = null
+      game.addLog('系统', `你出桃救了 ${dyingTargetName.value}`)
+    } else if (data?.message) {
+      game.addLog('系统', data.message)
+    }
+  } catch (e) {
+    console.error('respondDyingTao failed', e)
+  }
+}
+
+/** 濒死轮询：选择不出桃 */
+async function respondDyingPass() {
+  const rid = game.roomId.value
+  const pid = game.myPlayerId.value
+  if (!rid || !pid || !isDyingMode.value) return
+  try {
+    const res = await fetch(`/api/game/${rid}/respondDying`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId: pid, action: 'PASS' }),
+    })
+    const data = await res.json()
+    if (data?.ok) {
+      game.applyGameState(data)
+      selectedCardId.value = null
+    } else if (data?.message) {
+      game.addLog('系统', data.message)
+    }
+  } catch (e) {
+    console.error('respondDyingPass failed', e)
+  }
+}
+
+const acceptDamageLoading = ref(false)
 /** 承受伤害：被杀目标选择不出闪，承受伤害 */
 async function acceptDamage() {
   const rid = game.roomId.value
   const pid = game.myPlayerId.value
   if (!rid || !pid || !isRespondMode.value) return
+  acceptDamageLoading.value = true
   try {
     const res = await fetch(`/api/game/${rid}/respond`, {
       method: 'POST',
@@ -349,11 +459,15 @@ async function acceptDamage() {
       game.applyGameState(data)
       selectedCardId.value = null
       selectedTargetId.value = null
-    } else if (data?.message) {
-      game.addLog('系统', data.message)
+      game.addLog('系统', '你承受了伤害')
+    } else {
+      game.addLog('系统', data?.message || '响应失败，请重试')
     }
   } catch (e) {
     console.error('acceptDamage failed', e)
+    game.addLog('系统', '网络错误，请检查连接后重试')
+  } finally {
+    acceptDamageLoading.value = false
   }
 }
 

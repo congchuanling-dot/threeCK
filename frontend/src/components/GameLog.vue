@@ -1,9 +1,9 @@
 <template>
-  <div class="h-full flex flex-col rounded-lg border border-sanguo-gold/30 bg-sanguo-dark/90 overflow-hidden">
+  <div class="h-full flex flex-col rounded-lg border border-sanguo-gold/30 bg-sanguo-dark/90 overflow-hidden min-h-0">
     <div class="flex-shrink-0 px-3 py-2 border-b border-sanguo-gold/30 text-sanguo-gold font-semibold text-sm">
       战局记录
     </div>
-    <ul class="flex-1 overflow-y-auto p-2 space-y-1 text-sm">
+    <ul class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 space-y-1 text-sm">
       <li
         v-for="(entry, i) in displayLog"
         :key="i"

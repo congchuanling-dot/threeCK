@@ -1,4 +1,4 @@
-import { ref, shallowRef, onUnmounted } from 'vue'
+import { ref, shallowRef } from 'vue'
 
 const WS_BASE = import.meta.env.DEV
   ? `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.hostname}:8080`
@@ -7,6 +7,7 @@ const WS_BASE = import.meta.env.DEV
 /**
  * 游戏 WebSocket 与状态管理。
  * 连接 /ws，接收 ROOM_CREATED / PLAYER_JOINED / PHASE_CHANGED / BROADCAST，维护 gameContext 与日志。
+ * 页面重新可见时会通过 visibilitychange 拉取最新状态，解决后台标签页 WebSocket 被节流导致的回合不同步。
  */
 export function useGameSocket() {
   const connected = ref(false)
@@ -19,11 +20,35 @@ export function useGameSocket() {
   const roundNumber = ref(1)
   const battleCards = ref([]) // 当前出的牌（最近几张）
   const gameLog = ref([])
+  const killArrow = ref(null) // 出杀时箭头 { fromPlayerId, toPlayerId }，约1.5秒后自动清除
   const pendingKill = ref(null) // 待响应的杀 { targetId, sourceId, sourceName, targetName, amount }
+  const pendingDeath = ref(null) // 濒死轮询 { targetId, targetName, askingSeatIndex }
   const ws = shallowRef(null)
+
+  /** 从服务器拉取最新状态（解决标签页在后台时 WebSocket 消息被节流导致的不同步） */
+  async function syncStateFromServer() {
+    const rid = roomId.value
+    const pid = myPlayerId.value
+    if (!rid || !pid) return
+    try {
+      const res = await fetch(`/api/game/${rid}/state?playerId=${encodeURIComponent(pid)}`)
+      const data = await res.json()
+      if (data?.ok) applyGameState(data)
+    } catch (e) {
+      console.warn('syncStateFromServer failed', e)
+    }
+  }
+
+  function handleVisibilityChange() {
+    if (document.visibilityState === 'visible' && roomId.value && myPlayerId.value) {
+      syncStateFromServer()
+    }
+  }
 
   function connect() {
     if (ws.value?.readyState === WebSocket.OPEN) return
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     const url = `${WS_BASE}/ws`
     const socket = new WebSocket(url)
     ws.value = socket
@@ -68,6 +93,7 @@ export function useGameSocket() {
           if (typeof payload?.currentSeatIndex === 'number') currentSeatIndex.value = payload.currentSeatIndex
           if (typeof payload?.roundNumber === 'number') roundNumber.value = payload.roundNumber
           pendingKill.value = payload?.pendingKill ?? null
+          pendingDeath.value = payload?.pendingDeath ?? null
           if (Array.isArray(payload?.battleCards)) battleCards.value = payload.battleCards
           if (Array.isArray(payload?.players)) {
             players.value = payload.players
@@ -89,11 +115,21 @@ export function useGameSocket() {
             const p = players.value.find(x => x.playerId === data.playerId)
             const cardType = data.cardType || '?'
             addLog(p?.nickname ?? data.playerId, `打出了 ${cardType}`)
+            if (data.cardType === '杀' && data.targetId) {
+              killArrow.value = { fromPlayerId: data.playerId, toPlayerId: data.targetId }
+              setTimeout(() => { killArrow.value = null }, 1600)
+              // 若目标是本人，主动同步状态，确保 pendingKill 正确显示（防止 GAME_CONTEXT 丢失或乱序）
+              if (data.targetId === myPlayerId.value) {
+                syncStateFromServer()
+              }
+            }
           } else if (messageType === 'DAMAGE' && data) {
             addLog(data.sourceName ?? '未知', `对 ${data.targetName ?? data.targetId} 造成 ${data.amount ?? 0} 点伤害`)
           } else if (messageType === 'SHAN_NEGATED' && data) {
             const name = players.value.find(x => x.playerId === data.targetId)?.nickname ?? data.targetId
             addLog(name ?? '对方', data.message || '出闪抵消了杀')
+          } else if (messageType === 'PLAYER_DEATH' && data) {
+            addLog('系统', `${data.targetName ?? data.targetId} 阵亡`)
           }
         }
       } catch (e) {
@@ -127,8 +163,9 @@ export function useGameSocket() {
     ws.value.send(JSON.stringify(obj))
   }
 
-  function createRoom(roomName, maxPlayers = 4, nickname) {
-    send({ action: 'create_room', roomName, maxPlayers, nickname: nickname || '房主' })
+  function createRoom(roomName, nickname, botCount = 1) {
+    const count = Math.max(1, Math.min(7, botCount ?? 1))
+    send({ action: 'create_room', roomName, botCount: count, nickname: nickname || '房主' })
   }
 
   function joinRoom(rid, pid, nickname) {
@@ -144,6 +181,7 @@ export function useGameSocket() {
     if (typeof data.currentSeatIndex === 'number') currentSeatIndex.value = data.currentSeatIndex
     if (typeof data.roundNumber === 'number') roundNumber.value = data.roundNumber
     pendingKill.value = data.pendingKill ?? null
+    pendingDeath.value = data.pendingDeath ?? null
     if (Array.isArray(data.battleCards)) battleCards.value = data.battleCards
     // hand 仅当当前玩家是自己时更新（服务端返回的是当前玩家的手牌）
     const curPlayer = data.players?.find((p) => p.seatIndex === data.currentSeatIndex)
@@ -153,6 +191,7 @@ export function useGameSocket() {
   }
 
   function disconnect() {
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
     if (ws.value) {
       ws.value.close()
       ws.value = null
@@ -175,6 +214,7 @@ export function useGameSocket() {
     roundNumber,
     battleCards,
     gameLog,
+    killArrow,
     connect,
     send,
     createRoom,
@@ -183,5 +223,6 @@ export function useGameSocket() {
     addLog,
     disconnect,
     pendingKill,
+    pendingDeath,
   }
 }

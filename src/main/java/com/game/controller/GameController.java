@@ -76,6 +76,21 @@ public class GameController {
     }
 
     /**
+     * 获取当前游戏状态（用于页面重新可见时同步，解决后台标签页 WebSocket 消息被节流的问题）。
+     */
+    @GetMapping(value = "/{roomId}/state", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<Map<String, Object>> getGameState(@PathVariable String roomId,
+                                                   @RequestParam(required = false) String playerId) {
+        return Mono.fromCallable(() -> {
+            var ctxOpt = roomService.getOrCreateContext(roomId);
+            if (ctxOpt.isEmpty()) {
+                return Map.<String, Object>of("ok", false, "message", "对局未开始");
+            }
+            return buildGameStateResponse(ctxOpt.get(), roomId);
+        });
+    }
+
+    /**
      * 出牌：PLAY 阶段有效。杀→待目标响应（出闪抵消或承受伤害）；桃→回血；闪→仅在被杀时可出，用于抵消。
      */
     @PostMapping(value = "/{roomId}/play", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -217,6 +232,11 @@ public class GameController {
                 Map.of("targetId", targetId, "sourceId", pending.get("sourceId"),
                         "sourceName", pending.get("sourceName"), "message", "出闪抵消了杀")));
         webSocketHandler.broadcastGameContext(roomId, ctx);
+        // 出闪抵消后，杀被化解，当前仍是出杀机器人的回合，需驱动其继续出牌或结束回合
+        roomService.getStateMachine(roomId).ifPresent(sm -> {
+            botService.runBotTurnsUntilHuman(roomId, ctx, sm);
+            webSocketHandler.broadcastGameContext(roomId, ctx);
+        });
         return buildGameStateResponse(ctx, roomId);
     }
 
@@ -253,10 +273,107 @@ public class GameController {
                                 "sourceId", pending.get("sourceId"), "sourceName", pending.get("sourceName"), "amount", amount)));
                 ctx.clearPendingKill();
                 webSocketHandler.broadcastGameContext(roomId, ctx);
+                // 若进入濒死，先进行濒死轮询
+                if (ctx.getPendingDeath().isPresent()) {
+                    botService.runDyingPoll(roomId, ctx);
+                    webSocketHandler.broadcastGameContext(roomId, ctx);
+                    if (ctx.getPendingDeath().isEmpty()) {
+                        var smOpt = roomService.getStateMachine(roomId);
+                        if (smOpt.isPresent()) {
+                            botService.runBotTurnsUntilHuman(roomId, ctx, smOpt.get());
+                            webSocketHandler.broadcastGameContext(roomId, ctx);
+                        }
+                    }
+                } else {
+                    var smOpt = roomService.getStateMachine(roomId);
+                    if (smOpt.isPresent()) {
+                        botService.runBotTurnsUntilHuman(roomId, ctx, smOpt.get());
+                        webSocketHandler.broadcastGameContext(roomId, ctx);
+                    }
+                }
+                return buildGameStateResponse(ctx, roomId);
+            }
+            return Map.<String, Object>of("ok", false, "message", "无效的响应");
+        });
+    }
+
+    /** 濒死轮询时人类响应：出桃救人或跳过 */
+    @PostMapping(value = "/{roomId}/respondDying", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Mono<Map<String, Object>> respondDying(@PathVariable String roomId,
+                                                 @RequestBody Map<String, String> body) {
+        return Mono.fromCallable(() -> {
+            var ctxOpt = roomService.getOrCreateContext(roomId);
+            if (ctxOpt.isEmpty()) {
+                return Map.<String, Object>of("ok", false, "message", "对局未开始");
+            }
+            var pendingOpt = ctxOpt.get().getPendingDeath();
+            if (pendingOpt.isEmpty()) {
+                return Map.<String, Object>of("ok", false, "message", "无人濒死");
+            }
+            var pending = pendingOpt.get();
+            String targetId = (String) pending.get("targetId");
+            String targetName = (String) pending.get("targetName");
+            int askingSeat = ((Number) pending.get("askingSeatIndex")).intValue();
+            String playerId = body != null ? body.get("playerId") : null;
+            var askingOpt = ctxOpt.get().getRoom().getPlayerBySeat(askingSeat);
+            if (askingOpt.isEmpty() || !askingOpt.get().getPlayerId().equals(playerId)) {
+                return Map.<String, Object>of("ok", false, "message", "当前不是你的响应时机");
+            }
+            GameContext ctx = ctxOpt.get();
+            String action = body != null ? body.get("action") : null;
+            if ("USE_TAO".equals(action)) {
+                String cardId = body != null ? body.get("cardId") : null;
+                if (cardId == null || cardId.isBlank()) {
+                    return Map.<String, Object>of("ok", false, "message", "请选择要出的桃");
+                }
+                var player = askingOpt.get();
+                var cardOpt = player.getHandCards().stream().filter(c -> c.getId().equals(cardId)).findFirst();
+                if (cardOpt.isEmpty()) {
+                    return Map.<String, Object>of("ok", false, "message", "手牌中无此牌");
+                }
+                Card card = cardOpt.get();
+                if (!"桃".equals(card.getRankOrName())) {
+                    return Map.<String, Object>of("ok", false, "message", "只能出桃救人");
+                }
+                player.removeHandCard(card);
+                ctx.addToDiscardPile(card);
+                var targetOpt = ctx.getRoom().getPlayerById(targetId);
+                targetOpt.ifPresent(t -> t.setHp(Math.min(t.getMaxHp(), t.getHp() + 1)));
+                eventPublisher.publish(new PlayerPlayCardEvent(ctx, player, card));
+                ctx.addPlayedCard(playerId, cardId, "桃", targetId, targetName);
+                ctx.clearPendingDeath();
+                webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
+                        Map.of("playerId", playerId, "cardId", cardId, "cardType", "桃",
+                                "targetId", targetId, "targetName", targetName)));
+                webSocketHandler.broadcastGameContext(roomId, ctx);
                 var smOpt = roomService.getStateMachine(roomId);
                 if (smOpt.isPresent()) {
                     botService.runBotTurnsUntilHuman(roomId, ctx, smOpt.get());
                     webSocketHandler.broadcastGameContext(roomId, ctx);
+                }
+                return buildGameStateResponse(ctx, roomId);
+            }
+            if ("PASS".equals(action) || action == null || action.isBlank()) {
+                int nextAsk = ctx.nextSeatIndex(askingSeat);
+                var targetOpt = ctx.getRoom().getPlayerById(targetId);
+                int targetSeat = targetOpt.map(com.game.domain.Player::getSeatIndex).orElse(-1);
+                if (nextAsk == targetSeat) {
+                    targetOpt.ifPresent(t -> t.setAlive(false));
+                    ctx.clearPendingDeath();
+                    webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAYER_DEATH",
+                            Map.of("targetId", targetId, "targetName", targetName)));
+                } else {
+                    ctx.setPendingDeath(targetId, targetName, nextAsk);
+                }
+                webSocketHandler.broadcastGameContext(roomId, ctx);
+                botService.runDyingPoll(roomId, ctx);
+                webSocketHandler.broadcastGameContext(roomId, ctx);
+                if (ctx.getPendingDeath().isEmpty()) {
+                    var smOpt = roomService.getStateMachine(roomId);
+                    if (smOpt.isPresent()) {
+                        botService.runBotTurnsUntilHuman(roomId, ctx, smOpt.get());
+                        webSocketHandler.broadcastGameContext(roomId, ctx);
+                    }
                 }
                 return buildGameStateResponse(ctx, roomId);
             }
@@ -311,6 +428,7 @@ public class GameController {
         map.put("currentSeatIndex", ctx.getCurrentSeatIndex());
         map.put("roundNumber", ctx.getRoundNumber());
         ctx.getPendingKill().ifPresent(pk -> map.put("pendingKill", pk));
+        ctx.getPendingDeath().ifPresent(pd -> map.put("pendingDeath", pd));
         map.put("battleCards", ctx.getRecentBattleCards());
         return map;
     }

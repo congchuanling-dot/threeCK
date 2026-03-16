@@ -78,15 +78,18 @@ public class GameWebSocketHandler implements WebSocketHandler {
 
     private void handleCreateRoom(String sessionId, JsonNode root, String ownerId) {
         String roomName = root.has("roomName") ? root.get("roomName").asText() : "未命名";
-        int maxPlayers = root.has("maxPlayers") ? root.get("maxPlayers").asInt(4) : 4;
+        int botCount = root.has("botCount") ? Math.max(1, Math.min(7, root.get("botCount").asInt(1))) : 1;
+        int maxPlayers = 1 + botCount;  // 房主 + 机器人数量
         String nickname = root.has("nickname") ? root.get("nickname").asText() : "房主";
         GameRoom room = roomService.createRoom(roomName, maxPlayers, ownerId);
         room.join(ownerId, nickname);
-        int botSeat = room.join("BOT_1", "机器人");  // 自动加入机器人，方便单人打牌
+        for (int i = 1; i <= botCount; i++) {
+            int seat = room.join("BOT_" + i, "机器人" + i);
+            sendToSession(sessionId, GameMessage.playerJoined(room.getRoomId(), "BOT_" + i, "机器人" + i, seat));
+        }
         roomService.bindPlayerSession(room.getRoomId(), ownerId, sessionId);
         GameMessage msg = GameMessage.roomCreated(room.getRoomId(), room.getRoomName(), room.getMaxPlayers(), ownerId, nickname);
         sendToSession(sessionId, msg);
-        sendToSession(sessionId, GameMessage.playerJoined(room.getRoomId(), "BOT_1", "机器人", botSeat));
     }
 
     private void handleJoin(String sessionId, JsonNode root) {
@@ -153,6 +156,7 @@ public class GameWebSocketHandler implements WebSocketHandler {
         }
         dto.setPlayers(list);
         ctx.getPendingKill().ifPresent(dto::setPendingKill);
+        ctx.getPendingDeath().ifPresent(dto::setPendingDeath);
         dto.setBattleCards(ctx.getRecentBattleCards());
         return dto;
     }

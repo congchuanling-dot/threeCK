@@ -84,6 +84,76 @@ public class BotService {
             webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("DAMAGE",
                     Map.of("targetId", targetId, "targetName", pending.get("targetName"),
                             "sourceId", pending.get("sourceId"), "sourceName", pending.get("sourceName"), "amount", amount)));
+            // 若机器人濒死，进行濒死轮询
+            if (ctx.getPendingDeath().isPresent()) {
+                webSocketHandler.broadcastGameContext(roomId, ctx);
+                runDyingPoll(roomId, ctx);
+            }
+        }
+    }
+
+    /**
+     * 濒死轮询：从濒死者开始依次询问每位玩家是否出桃。轮到机器人时自动响应；轮到人类时返回等待 HTTP。
+     */
+    public void runDyingPoll(String roomId, GameContext ctx) {
+        while (ctx.getPendingDeath().isPresent()) {
+            var pending = ctx.getPendingDeath().get();
+            int askingSeat = ((Number) pending.get("askingSeatIndex")).intValue();
+            var playerOpt = ctx.getRoom().getPlayerBySeat(askingSeat);
+            if (playerOpt.isEmpty()) break;
+            Player p = playerOpt.get();
+            if (isBot(p.getPlayerId())) {
+                botDelay();
+                respondToDying(roomId, ctx);
+                webSocketHandler.broadcastGameContext(roomId, ctx);
+            } else {
+                return; // 轮到人类，等待 HTTP respondDying
+            }
+        }
+    }
+
+    /**
+     * 机器人响应濒死：有桃则用桃救（可自救），否则跳过。
+     */
+    public void respondToDying(String roomId, GameContext ctx) {
+        var pendingOpt = ctx.getPendingDeath();
+        if (pendingOpt.isEmpty()) return;
+        var pending = pendingOpt.get();
+        String targetId = (String) pending.get("targetId");
+        int askingSeat = ((Number) pending.get("askingSeatIndex")).intValue();
+        var askingOpt = ctx.getRoom().getPlayerBySeat(askingSeat);
+        if (askingOpt.isEmpty()) return;
+        Player asking = askingOpt.get();
+        if (!isBot(asking.getPlayerId())) return;
+
+        var tao = asking.getHandCards().stream().filter(c -> "桃".equals(c.getRankOrName())).findFirst().orElse(null);
+        if (tao != null) {
+            asking.removeHandCard(tao);
+            ctx.addToDiscardPile(tao);
+            var targetOpt = ctx.getRoom().getPlayerById(targetId);
+            targetOpt.ifPresent(t -> {
+                t.setHp(Math.min(t.getMaxHp(), t.getHp() + 1));
+                eventPublisher.publish(new PlayerPlayCardEvent(ctx, asking, tao));
+            });
+            ctx.addPlayedCard(asking.getPlayerId(), tao.getId(), "桃", targetId, (String) pending.get("targetName"));
+            ctx.clearPendingDeath();
+            webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAY_CARD",
+                    Map.of("playerId", asking.getPlayerId(), "cardId", tao.getId(), "cardType", "桃",
+                            "targetId", targetId, "targetName", pending.get("targetName"))));
+        } else {
+            // 跳过，询问下一人
+            String targetName = (String) pending.get("targetName");
+            int nextAsk = ctx.nextSeatIndex(askingSeat);
+            var targetOpt = ctx.getRoom().getPlayerById(targetId);
+            int targetSeat = targetOpt.map(Player::getSeatIndex).orElse(-1);
+            if (nextAsk == targetSeat) {
+                targetOpt.ifPresent(t -> t.setAlive(false));
+                ctx.clearPendingDeath();
+                webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("PLAYER_DEATH",
+                        Map.of("targetId", targetId, "targetName", targetName)));
+            } else {
+                ctx.setPendingDeath(targetId, targetName, nextAsk);
+            }
         }
     }
 
@@ -118,6 +188,7 @@ public class BotService {
             boolean pendingHuman = doPlayCard(roomId, ctx, bot, sha, humanTarget.get().getPlayerId());
             webSocketHandler.broadcastGameContext(roomId, ctx);
             if (pendingHuman) return true; // 等待人类出闪或承受，暂停
+            if (ctx.getPendingDeath().isPresent()) return true; // 机器人濒死，等待人类响应出桃
             botDelay();
             endBotRound(roomId, ctx, sm);
             return false;
@@ -159,6 +230,10 @@ public class BotService {
                     webSocketHandler.broadcastToRoom(roomId, GameMessage.broadcast("DAMAGE",
                             Map.of("targetId", target.getPlayerId(), "targetName", target.getNickname(),
                                     "sourceId", player.getPlayerId(), "sourceName", player.getNickname(), "amount", 1)));
+                    if (ctx.getPendingDeath().isPresent()) {
+                        webSocketHandler.broadcastGameContext(roomId, ctx);
+                        runDyingPoll(roomId, ctx);
+                    }
                 } else {
                     ctx.setPendingKill(target.getPlayerId(), player.getPlayerId(), player.getNickname(), target.getNickname(), 1);
                     return true;

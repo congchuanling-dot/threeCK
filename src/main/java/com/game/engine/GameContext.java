@@ -57,6 +57,11 @@ public class GameContext {
         this.currentSeatIndex = normalizeSeat(currentSeatIndex);
     }
 
+    /** 下一座位的索引（按座位轮询，不论存活），用于濒死轮询 */
+    public int nextSeatIndex(int fromSeat) {
+        return normalizeSeat(fromSeat + 1);
+    }
+
     /** 下一顺位存活玩家的座位索引 */
     public int nextAliveSeatIndex() {
         int n = room.getMaxPlayers();
@@ -184,6 +189,22 @@ public class GameContext {
 
     public void clearPendingKill() {
         attributes.remove(PENDING_KILL);
+    }
+
+    /** 濒死轮询键名。HP=0 时设置，轮询各玩家是否出桃救人。{ targetId, targetName, askingSeatIndex } */
+    public static final String PENDING_DEATH = "pendingDeath";
+
+    public void setPendingDeath(String targetId, String targetName, int askingSeatIndex) {
+        attributes.put(PENDING_DEATH, Map.of("targetId", targetId, "targetName", targetName, "askingSeatIndex", askingSeatIndex));
+    }
+
+    @SuppressWarnings("unchecked")
+    public Optional<Map<String, Object>> getPendingDeath() {
+        return getAttribute(PENDING_DEATH);
+    }
+
+    public void clearPendingDeath() {
+        attributes.remove(PENDING_DEATH);
     }
 
     /** 记录打出的牌，供中央出牌区展示 */

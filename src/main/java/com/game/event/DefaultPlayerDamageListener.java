@@ -26,6 +26,12 @@ public class DefaultPlayerDamageListener implements GameEventListener<PlayerDama
         if (target != null && amount > 0) {
             target.takeDamage(amount);
             log.debug("玩家 {} 受到 {} 点伤害，当前体力 {}", target.getPlayerId(), amount, target.getHp());
+            // 濒死：HP=0 时进入濒死轮询，暂不判死
+            if (target.getHp() <= 0) {
+                target.setAlive(true);
+                var ctx = event.getContext();
+                ctx.setPendingDeath(target.getPlayerId(), target.getNickname(), target.getSeatIndex());
+            }
         }
     }
 }

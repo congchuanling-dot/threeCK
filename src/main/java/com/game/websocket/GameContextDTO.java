@@ -21,11 +21,16 @@ public class GameContextDTO {
     private List<PlayerSnapshot> players;
     /** 待响应的杀 { targetId, sourceId, sourceName, targetName, amount } */
     private java.util.Map<String, Object> pendingKill;
+    /** 濒死轮询 { targetId, targetName, askingSeatIndex } */
+    private java.util.Map<String, Object> pendingDeath;
     /** 中央出牌区展示的最近打出的牌 [{ playerId, cardId, cardType, targetId?, targetName? }] */
     private List<java.util.Map<String, Object>> battleCards;
 
     public java.util.Map<String, Object> getPendingKill() { return pendingKill; }
     public void setPendingKill(java.util.Map<String, Object> pendingKill) { this.pendingKill = pendingKill; }
+
+    public java.util.Map<String, Object> getPendingDeath() { return pendingDeath; }
+    public void setPendingDeath(java.util.Map<String, Object> pendingDeath) { this.pendingDeath = pendingDeath; }
 
     public List<java.util.Map<String, Object>> getBattleCards() { return battleCards; }
     public void setBattleCards(List<java.util.Map<String, Object>> battleCards) { this.battleCards = battleCards; }
