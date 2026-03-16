@@ -21,13 +21,7 @@
       <div class="text-center font-semibold text-amber-100 text-sm truncate">
         {{ player.nickname || player.playerId }}
       </div>
-      <div v-if="player.general?.name" class="text-center text-sanguo-gold/80 text-xs mt-0.5">
-        {{ player.general.name }}
-      </div>
-      <div v-if="player.general?.name" class="text-center text-sanguo-gold/80 text-xs mt-0.5">
-        {{ player.general.name }}
-      </div>
-      <div v-if="player?.general?.name" class="text-center text-sanguo-gold/80 text-xs truncate">
+      <div v-if="player?.general?.name" class="text-center text-sanguo-gold/80 text-xs truncate mt-0.5">
         {{ player.general.name }}
       </div>
       <div class="flex justify-center items-center gap-2 mt-1">
